@@ -3,15 +3,14 @@ import { User, Task } from '../types';
 
 /**
  * MOCK CLOUD API SERVICE
- * In a real-world scenario, these would be fetch() calls to your company's backend.
- * We are using a 'Global Registry' simulation to mimic a central server.
+ * Simulation of a central company server.
  */
 
-const MOCK_DELAY = 600; // Simulate network latency
+const MOCK_DELAY = 400;
 
-// This simulates the 'Central Server' database
 const getGlobalDatabase = () => {
-  return JSON.parse(localStorage.getItem('ws_cloud_db') || '{"users": [], "workspaces": {}}');
+  const db = localStorage.getItem('ws_cloud_db');
+  return db ? JSON.parse(db) : { users: [], workspaces: {} };
 };
 
 const saveGlobalDatabase = (db: any) => {
@@ -20,13 +19,40 @@ const saveGlobalDatabase = (db: any) => {
 
 export const apiService = {
   /**
-   * Register a new user on the 'Central Server'
+   * ADMIN: Get entire DB string for mirroring
    */
+  exportDatabase: (): string => {
+    return btoa(JSON.stringify(getGlobalDatabase()));
+  },
+
+  /**
+   * ADMIN: Restore entire DB from string
+   */
+  importDatabase: (data: string): void => {
+    try {
+      const parsed = JSON.parse(atob(data));
+      if (parsed.users && parsed.workspaces) {
+        saveGlobalDatabase(parsed);
+      }
+    } catch (e) {
+      throw new Error("Invalid Server Data Blob");
+    }
+  },
+
+  /**
+   * ADMIN: List all users (excluding admin itself)
+   */
+  getAllUsers: async (): Promise<any[]> => {
+    await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
+    const db = getGlobalDatabase();
+    return db.users;
+  },
+
   register: async (name: string, email: string, password: string, avatarColor: string): Promise<User> => {
     await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
     const db = getGlobalDatabase();
     
-    if (db.users.find((u: any) => u.email === email)) {
+    if (db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
       throw new Error('User already exists on server.');
     }
 
@@ -38,15 +64,27 @@ export const apiService = {
     return newUser;
   },
 
-  /**
-   * Login and fetch data from 'Central Server'
-   */
-  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[] }> => {
+  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[]; isAdmin?: boolean }> => {
     await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-    const db = getGlobalDatabase();
     
-    const found = db.users.find((u: any) => u.email === email && u.password === password);
-    if (!found) throw new Error('Invalid email or password.');
+    // Master Admin Login
+    if (email === 'admin@worksync.ai' && password === 'admin123') {
+      const adminUser: User = {
+        id: 'admin_master',
+        name: 'Server Admin',
+        email: 'admin@worksync.ai',
+        isGuest: false,
+        avatarColor: '#1e293b'
+      };
+      return { user: adminUser, tasks: [], team: [], isAdmin: true };
+    }
+
+    const db = getGlobalDatabase();
+    const found = db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+    
+    if (!found) {
+      throw new Error('Invalid email or password. If you registered on another device, you must use "Mirror Server" in the Admin panel first.');
+    }
 
     const user: User = { id: found.id, name: found.name, email: found.email, isGuest: false, avatarColor: found.avatarColor };
     const workspace = db.workspaces[user.id] || { tasks: [], team: ['Self'] };
@@ -54,11 +92,8 @@ export const apiService = {
     return { user, ...workspace };
   },
 
-  /**
-   * Push updates to the 'Central Server'
-   */
   syncWorkspace: async (userId: string, tasks: Task[], team: string[]): Promise<void> => {
-    // In a real app, this would be a PATCH or PUT request
+    if (userId === 'admin_master') return;
     const db = getGlobalDatabase();
     if (db.workspaces[userId]) {
       db.workspaces[userId] = { tasks, team };
@@ -66,11 +101,7 @@ export const apiService = {
     }
   },
 
-  /**
-   * Pull latest data from 'Central Server'
-   */
   fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[] }> => {
-    await new Promise(resolve => setTimeout(resolve, 200));
     const db = getGlobalDatabase();
     return db.workspaces[userId] || { tasks: [], team: ['Self'] };
   }
