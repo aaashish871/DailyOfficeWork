@@ -16,9 +16,8 @@ const formatAppDate = (dateStr: string) => {
 export const generateDailySummary = async (tasks: Task[]): Promise<string> => {
   if (tasks.length === 0) return "No tasks logged for this date.";
 
-  // Initialize AI client inside the function to avoid top-level module errors 
-  // if the API_KEY environment variable is not yet ready during initial load.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  // Initialize AI client inside the function using process.env.API_KEY directly as per guidelines.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const logDateFormatted = formatAppDate(tasks[0].logDate);
   const taskListString = tasks.map(t => {

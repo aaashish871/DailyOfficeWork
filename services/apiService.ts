@@ -1,107 +1,157 @@
 
-import { User, Task } from '../types';
+import { createClient } from '@supabase/supabase-js';
+import { User, Task, TaskStatus } from '../types';
 
 /**
- * CENTRAL COMPANY SERVER SIMULATOR
- * This service handles authentication and data persistence.
- * For true cross-device use, replace localStorage with a real API endpoint.
+ * REAL SQL SERVER INTEGRATION (Supabase)
+ * Project URL from your screenshot
  */
+const SUPABASE_URL = 'https://yvugbgjrakdcgirxpcvi.supabase.co';
 
-const MOCK_DELAY = 800;
+/**
+ * API KEY INSTRUCTIONS:
+ * 1. Go to your last screenshot (API Keys page).
+ * 2. Look at "Publishable key" section.
+ * 3. Copy the key starting with 'sb_publishable...' 
+ * 4. Paste it below.
+ */
+const SUPABASE_ANON_KEY = 'sb_publishable_f3m2s_7xpL28Tm8vQsjU1A_R7HVsVJP';
 
-const getGlobalDB = () => {
-  const db = localStorage.getItem('worksync_central_db');
-  return db ? JSON.parse(db) : { users: [], workspaces: {} };
-};
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const saveGlobalDB = (db: any) => {
-  localStorage.setItem('worksync_central_db', JSON.stringify(db));
-};
+// Helper to map DB task to Application Task
+const mapDbTaskToTask = (t: any): Task => ({
+  id: t.id,
+  title: t.title,
+  description: t.description,
+  status: t.status as TaskStatus,
+  priority: t.priority,
+  category: t.category,
+  createdAt: t.created_at ? new Date(t.created_at).getTime() : Date.now(),
+  completedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
+  logDate: t.log_date,
+  dueDate: t.due_date,
+  blocker: t.blocker,
+  postponedReason: t.postponed_reason
+});
 
 export const apiService = {
-  /**
-   * Register user and "trigger" verification email
-   */
-  register: async (name: string, email: string, password: string, avatarColor: string): Promise<User> => {
-    await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-    const db = getGlobalDB();
-    
-    if (db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
-      throw new Error('An account with this email already exists on our server.');
-    }
+  register: async (name: string, email: string, password: string, avatarColor: string): Promise<void> => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: name, avatar_color: avatarColor }
+      }
+    });
 
-    const newUser: User = { 
-      id: crypto.randomUUID(), 
-      name, 
-      email: email.toLowerCase(), 
-      isGuest: false, 
-      avatarColor,
-      isVerified: false // Users start unverified
-    };
-
-    db.users.push({ ...newUser, password });
-    db.workspaces[newUser.id] = { tasks: [], team: ['Self', 'Rahul', 'Priya', 'Amit'] };
+    if (error) throw error;
     
-    saveGlobalDB(db);
-    return newUser;
-  },
-
-  /**
-   * Simulate the user clicking the link in their email
-   */
-  verifyEmail: async (email: string): Promise<void> => {
-    await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-    const db = getGlobalDB();
-    const userIndex = db.users.findIndex((u: any) => u.email === email.toLowerCase());
-    
-    if (userIndex !== -1) {
-      db.users[userIndex].isVerified = true;
-      saveGlobalDB(db);
-    } else {
-      throw new Error("Verification failed: User not found.");
+    if (data.user) {
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        name,
+        avatar_color: avatarColor
+      });
     }
   },
 
-  /**
-   * Login with strict verification check
-   */
   login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[] }> => {
-    await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-    const db = getGlobalDB();
-    
-    const found = db.users.find((u: any) => u.email === email.toLowerCase() && u.password === password);
-    
-    if (!found) {
-      throw new Error('Invalid email or password. Please check your credentials.');
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (authError) throw authError;
+
+    const user = authData.user;
+    if (!user.email_confirmed_at) {
+      await supabase.auth.signOut();
+      throw new Error('UNVERIFIED: Please check your email and click the verification link before signing in.');
     }
 
-    if (!found.isVerified) {
-      throw new Error('UNVERIFIED: Please check your email and verify your account before logging in.');
-    }
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    const workspace = await apiService.fetchWorkspace(user.id);
 
-    const user: User = { 
-      id: found.id, 
-      name: found.name, 
-      email: found.email, 
-      isGuest: false, 
-      avatarColor: found.avatarColor,
-      isVerified: found.isVerified
+    return {
+      user: {
+        id: user.id,
+        name: profile?.name || 'User',
+        email: user.email!,
+        isGuest: false,
+        avatarColor: profile?.avatar_color || '#6366f1',
+        isVerified: true
+      },
+      tasks: workspace.tasks,
+      team: workspace.team
     };
-    
-    const workspace = db.workspaces[user.id] || { tasks: [], team: ['Self'] };
-    return { user, ...workspace };
   },
 
-  syncWorkspace: async (userId: string, tasks: Task[], team: string[]): Promise<void> => {
-    const db = getGlobalDB();
-    if (db.workspaces[userId]) {
-      db.workspaces[userId] = { tasks, team };
-      saveGlobalDB(db);
-    }
+  getCurrentUser: async (): Promise<User | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || !session.user.email_confirmed_at) return null;
+
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+    
+    return {
+      id: session.user.id,
+      name: profile?.name || 'User',
+      email: session.user.email!,
+      isGuest: false,
+      avatarColor: profile?.avatar_color || '#6366f1',
+      isVerified: true
+    };
   },
 
   fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[] }> => {
-    const db = getGlobalDB();
-    return db.workspaces[userId] || { tasks: [], team: ['Self'] };
+    const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    const { data: teamData } = await supabase.from('team_members').select('name').eq('user_id', userId);
+
+    return {
+      tasks: (tasksData || []).map(mapDbTaskToTask),
+      team: teamData?.map(t => t.name) || ['Self']
+    };
+  },
+
+  syncWorkspace: async (userId: string, tasks: Task[], team: string[]): Promise<void> => {
+    await apiService.syncTeam(userId, team);
+    for (const task of tasks) {
+      await apiService.syncTask(userId, task);
+    }
+  },
+
+  syncTask: async (userId: string, task: Task): Promise<void> => {
+    const { error } = await supabase.from('tasks').upsert({
+      id: task.id,
+      user_id: userId,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      category: task.category,
+      log_date: task.logDate,
+      due_date: task.dueDate,
+      blocker: task.blocker,
+      postponed_reason: task.postponedReason,
+      completed_at: task.completedAt ? new Date(task.completedAt).toISOString() : null,
+      created_at: new Date(task.createdAt).toISOString()
+    });
+    if (error) console.error("Sync Error", error);
+  },
+
+  deleteTask: async (taskId: string): Promise<void> => {
+    await supabase.from('tasks').delete().eq('id', taskId);
+  },
+
+  syncTeam: async (userId: string, names: string[]): Promise<void> => {
+    await supabase.from('team_members').delete().eq('user_id', userId);
+    if (names.length > 0) {
+      const inserts = names.map(n => ({ user_id: userId, name: n }));
+      await supabase.from('team_members').insert(inserts);
+    }
+  },
+
+  signOut: async () => {
+    await supabase.auth.signOut();
   }
 };

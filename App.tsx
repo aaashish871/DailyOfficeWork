@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import Auth from './components/Auth';
 import { User } from './types';
+import { apiService } from './services/apiService';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -10,33 +11,42 @@ const App: React.FC = () => {
   const [initialData, setInitialData] = useState<{ tasks: any[]; team: string[] } | undefined>();
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('ws_active_user');
-    if (savedUser) {
+    // Check for existing real session from SQL Server
+    const checkAuth = async () => {
       try {
-        setUser(JSON.parse(savedUser));
+        const currentUser = await apiService.getCurrentUser();
+        if (currentUser) {
+          const workspace = await apiService.fetchWorkspace(currentUser.id);
+          setUser(currentUser);
+          setInitialData(workspace);
+        }
       } catch (e) {
         console.error('Session error', e);
+      } finally {
+        setLoading(false);
       }
-    }
-    setLoading(false);
+    };
+    checkAuth();
   }, []);
 
   const handleLogin = (newUser: User, data?: { tasks: any[]; team: string[] }) => {
     setUser(newUser);
     setInitialData(data);
-    localStorage.setItem('ws_active_user', JSON.stringify(newUser));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await apiService.signOut();
     setUser(null);
     setInitialData(undefined);
-    localStorage.removeItem('ws_active_user');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <i className="fa-solid fa-circle-notch fa-spin text-indigo-600 text-4xl"></i>
+      <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <div className="text-center">
+          <i className="fa-solid fa-circle-notch fa-spin text-indigo-500 text-4xl mb-4"></i>
+          <p className="text-white text-[10px] font-black uppercase tracking-widest">Connecting to Central Server...</p>
+        </div>
       </div>
     );
   }
@@ -50,29 +60,25 @@ const App: React.FC = () => {
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center">
-              <i className="fa-solid fa-cloud"></i>
+            <div className="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center shadow-lg shadow-indigo-100">
+              <i className="fa-solid fa-server"></i>
             </div>
             <span className="font-bold text-slate-800 tracking-tight">WorkSync <span className="text-indigo-600">Pro</span></span>
-            {!user.isGuest && (
-              <div className="hidden sm:flex items-center gap-1.5 ml-4 px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-full">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Server Connected</span>
-              </div>
-            )}
+            <div className="hidden sm:flex items-center gap-1.5 ml-4 px-2 py-1 bg-emerald-50 border border-emerald-100 rounded-full">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">SQL Server Live</span>
+            </div>
           </div>
           
           <div className="flex items-center gap-4">
             <div className="hidden md:flex flex-col items-end leading-tight">
               <span className="text-sm font-bold text-slate-800">{user.name}</span>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                {user.isGuest ? 'Offline Mode' : user.email}
-              </span>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{user.email}</span>
             </div>
             
             <div className="relative group">
               <button 
-                className="h-10 w-10 rounded-xl flex items-center justify-center text-white border border-slate-200 shadow-sm transition-all overflow-hidden"
+                className="h-10 w-10 rounded-xl flex items-center justify-center text-white border border-slate-200 shadow-sm transition-all overflow-hidden font-black"
                 style={{ backgroundColor: user.avatarColor }}
               >
                 {user.name.charAt(0).toUpperCase()}
