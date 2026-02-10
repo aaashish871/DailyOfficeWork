@@ -11,6 +11,14 @@ export enum TaskPriority {
   HIGH = 'HIGH'
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  isGuest: boolean;
+  avatarColor: string;
+}
+
 export interface Task {
   id: string;
   title: string;

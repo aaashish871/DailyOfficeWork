@@ -1,10 +1,14 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Task, TaskStatus, TaskPriority } from '../types';
+import { Task, TaskStatus, TaskPriority, User } from '../types';
 import TaskForm from './TaskForm';
 import TaskList from './TaskList';
 import { generateDailySummary } from '../services/geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
+interface DashboardProps {
+  user: User;
+}
 
 /**
  * Utility to convert YYYY-MM-DD to DD-MMM-YYYY (e.g., 10-Feb-2026)
@@ -17,7 +21,7 @@ export const formatAppDate = (dateStr: string) => {
   return `${day}-${months[mIdx]}-${year}`;
 };
 
-const Dashboard: React.FC = () => {
+const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [teamMembers, setTeamMembers] = useState<string[]>(['Self', 'Rahul', 'Priya', 'Amit']);
   const [newMemberName, setNewMemberName] = useState('');
@@ -31,32 +35,58 @@ const Dashboard: React.FC = () => {
   const [deletionError, setDeletionError] = useState<{name: string, tasks: Task[]} | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
-  // Load from local storage
+  // User-specific storage keys
+  const TASKS_KEY = `work_sync_tasks_${user.id}`;
+  const TEAM_KEY = `work_sync_team_${user.id}`;
+
+  // Load from local storage - Depends on user.id
   useEffect(() => {
-    const savedTasks = localStorage.getItem('work_sync_tasks_v2');
-    const savedTeam = localStorage.getItem('work_sync_team');
+    const savedTasks = localStorage.getItem(TASKS_KEY);
+    const savedTeam = localStorage.getItem(TEAM_KEY);
     
     if (savedTasks) {
-      try { setAllTasks(JSON.parse(savedTasks)); } catch (e) { console.error(e); }
+      try { 
+        setAllTasks(JSON.parse(savedTasks)); 
+      } catch (e) { 
+        console.error('Error loading tasks', e);
+        setAllTasks([]);
+      }
+    } else {
+      setAllTasks([]);
     }
+
     if (savedTeam) {
       try { 
         const parsedTeam = JSON.parse(savedTeam);
         if (Array.isArray(parsedTeam) && parsedTeam.length > 0) {
           setTeamMembers(parsedTeam);
+        } else {
+          setTeamMembers(['Self']);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.error('Error loading team', e);
+        setTeamMembers(['Self']);
+      }
+    } else {
+      setTeamMembers(['Self', 'Rahul', 'Priya', 'Amit']);
     }
-  }, []);
+    
+    // Reset AI summary when switching users
+    setAiSummary('');
+  }, [user.id, TASKS_KEY, TEAM_KEY]);
 
   // Sync to local storage on changes
   useEffect(() => {
-    localStorage.setItem('work_sync_tasks_v2', JSON.stringify(allTasks));
-  }, [allTasks]);
+    if (user) {
+      localStorage.setItem(TASKS_KEY, JSON.stringify(allTasks));
+    }
+  }, [allTasks, TASKS_KEY, user]);
 
   useEffect(() => {
-    localStorage.setItem('work_sync_team', JSON.stringify(teamMembers));
-  }, [teamMembers]);
+    if (user) {
+      localStorage.setItem(TEAM_KEY, JSON.stringify(teamMembers));
+    }
+  }, [teamMembers, TEAM_KEY, user]);
 
   const filteredTasks = useMemo(() => {
     return allTasks.filter(t => t.logDate === selectedDate);
@@ -117,8 +147,6 @@ const Dashboard: React.FC = () => {
   };
 
   const initiateRemoveMember = (name: string) => {
-    // Check for active tasks across ALL logs.
-    // Member is deletable only if they have NO tasks or ALL their tasks are DONE.
     const pendingTasks = allTasks.filter(task => 
       task.blocker?.trim() === name.trim() && 
       (task.status === TaskStatus.TODO || task.status === TaskStatus.IN_PROGRESS)
@@ -129,7 +157,6 @@ const Dashboard: React.FC = () => {
       return;
     }
 
-    // Show custom confirmation modal
     setConfirmDelete(name);
   };
 
@@ -188,9 +215,6 @@ const Dashboard: React.FC = () => {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-4 text-[10px] text-slate-500 font-medium leading-tight bg-white p-2 rounded-lg border border-slate-200 shadow-sm italic text-center">
-                   Complete or re-assign these tasks before removing the member.
-                </p>
               </div>
 
               <button 
@@ -370,7 +394,7 @@ const Dashboard: React.FC = () => {
               <div className="bg-slate-900 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
                 <div className="relative z-10">
                   <h3 className="text-lg font-bold mb-2">Blocker Alert</h3>
-                  <p className="text-slate-400 text-sm mb-6">You have {blockedTasksCount} task{blockedTasksCount !== 1 ? 's' : ''} currently waiting for response or action from team members.</p>
+                  <p className="text-slate-400 text-sm mb-6">You have {blockedTasksCount} task{blockedTasksCount !== 1 ? 's' : ''} waiting for action.</p>
                   <button onClick={() => setActiveTab('tasks')} className="bg-white text-slate-900 px-6 py-2 rounded-lg font-bold text-sm hover:bg-slate-100 transition-colors">View Blockers</button>
                 </div>
                 <i className="fa-solid fa-triangle-exclamation absolute -right-4 -bottom-4 text-8xl text-white/5 transform rotate-12"></i>
@@ -379,7 +403,7 @@ const Dashboard: React.FC = () => {
               <div className="bg-indigo-600 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
                 <div className="relative z-10">
                   <h3 className="text-lg font-bold mb-2">Smart Reporting</h3>
-                  <p className="text-indigo-100 text-sm mb-6">Generate a professional office report based on your tasks logged for {formatAppDate(selectedDate)}.</p>
+                  <p className="text-indigo-100 text-sm mb-6">Generate a professional office report based on your tasks logged.</p>
                   <button onClick={handleGenerateSummary} disabled={filteredTasks.length === 0} className="bg-indigo-400/30 backdrop-blur-sm border border-indigo-300/30 text-white px-6 py-2 rounded-lg font-bold text-sm hover:bg-indigo-400/50 transition-colors flex items-center gap-2">
                     <i className="fa-solid fa-wand-magic-sparkles"></i>
                     Summarize Day
