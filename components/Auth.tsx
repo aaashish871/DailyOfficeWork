@@ -11,6 +11,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
   const avatarColors = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
@@ -96,13 +97,15 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           <div className="flex bg-slate-100 p-1 rounded-xl mb-8">
             <button 
-              onClick={() => { setIsLogin(true); setError(''); }}
+              type="button"
+              onClick={() => { setIsLogin(true); setError(''); setShowPassword(false); }}
               className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLogin ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Login
             </button>
             <button 
-              onClick={() => { setIsLogin(false); setError(''); }}
+              type="button"
+              onClick={() => { setIsLogin(false); setError(''); setShowPassword(false); }}
               className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLogin ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Register
@@ -151,12 +154,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               <div className="relative">
                 <i className="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
                 <input 
-                  type="password" 
+                  type={showPassword ? 'text' : 'password'} 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                  className="w-full pl-11 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors focus:outline-none"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
               </div>
             </div>
 
@@ -170,6 +181,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           <div className="mt-8 pt-8 border-t border-slate-100">
             <button 
+              type="button"
               onClick={handleGuestLogin}
               className="w-full bg-white border border-slate-200 text-slate-600 font-bold text-sm py-3 rounded-xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
             >
