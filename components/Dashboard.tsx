@@ -117,19 +117,19 @@ const Dashboard: React.FC = () => {
   };
 
   const initiateRemoveMember = (name: string) => {
-    // 1. Check for active tasks across ALL logs with safety trimming
-    const activeTasks = allTasks.filter(task => 
+    // Check for active tasks across ALL logs.
+    // Member is deletable only if they have NO tasks or ALL their tasks are DONE.
+    const pendingTasks = allTasks.filter(task => 
       task.blocker?.trim() === name.trim() && 
       (task.status === TaskStatus.TODO || task.status === TaskStatus.IN_PROGRESS)
     );
 
-    // 2. If active tasks found, show reason modal and STOP
-    if (activeTasks.length > 0) {
-      setDeletionError({ name, tasks: activeTasks });
+    if (pendingTasks.length > 0) {
+      setDeletionError({ name, tasks: pendingTasks });
       return;
     }
 
-    // 3. Otherwise, show custom confirmation modal
+    // Show custom confirmation modal
     setConfirmDelete(name);
   };
 
@@ -140,7 +140,7 @@ const Dashboard: React.FC = () => {
     setTeamMembers(prev => prev.filter(m => m !== nameToRemove));
     
     setConfirmDelete(null);
-    setFeedback(`Member "${nameToRemove}" has been removed.`);
+    setFeedback(`Member "${nameToRemove}" has been removed successfully.`);
     setTimeout(() => setFeedback(null), 4000);
   };
 
@@ -189,7 +189,7 @@ const Dashboard: React.FC = () => {
                   ))}
                 </ul>
                 <p className="mt-4 text-[10px] text-slate-500 font-medium leading-tight bg-white p-2 rounded-lg border border-slate-200 shadow-sm italic text-center">
-                   Complete or re-assign these tasks before removing.
+                   Complete or re-assign these tasks before removing the member.
                 </p>
               </div>
 
@@ -197,7 +197,7 @@ const Dashboard: React.FC = () => {
                 onClick={() => setDeletionError(null)}
                 className="w-full bg-slate-800 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl hover:bg-slate-900 transition-all shadow-lg active:scale-[0.98]"
               >
-                Understood
+                Okay, I'll update tasks
               </button>
             </div>
           </div>
@@ -214,8 +214,8 @@ const Dashboard: React.FC = () => {
               </div>
               <h3 className="text-xl font-black text-slate-800 mb-2">Confirm Removal</h3>
               <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                Remove <span className="font-bold text-slate-900">"{confirmDelete}"</span> from the team? 
-                <br/>Existing logs will not be deleted.
+                Are you sure you want to remove <span className="font-bold text-slate-900">"{confirmDelete}"</span>? 
+                <br/>Past records will remain, but this member will no longer be available for new assignments.
               </p>
               
               <div className="flex flex-col gap-3">
@@ -223,7 +223,7 @@ const Dashboard: React.FC = () => {
                   onClick={executeRemoveMember}
                   className="w-full bg-red-500 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl hover:bg-red-600 transition-all shadow-lg active:scale-[0.97]"
                 >
-                  Confirm Removal
+                  Yes, Remove
                 </button>
                 <button 
                   onClick={() => setConfirmDelete(null)}

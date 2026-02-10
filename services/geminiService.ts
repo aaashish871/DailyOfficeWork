@@ -2,9 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Task } from "../types";
 
-// Fix: Initialize GoogleGenAI strictly using process.env.API_KEY as per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 /**
  * Utility to convert YYYY-MM-DD to DD-MMM-YYYY (e.g., 10-Feb-2026)
  */
@@ -18,6 +15,10 @@ const formatAppDate = (dateStr: string) => {
 
 export const generateDailySummary = async (tasks: Task[]): Promise<string> => {
   if (tasks.length === 0) return "No tasks logged for this date.";
+
+  // Initialize AI client inside the function to avoid top-level module errors 
+  // if the API_KEY environment variable is not yet ready during initial load.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
   const logDateFormatted = formatAppDate(tasks[0].logDate);
   const taskListString = tasks.map(t => {
@@ -56,6 +57,6 @@ export const generateDailySummary = async (tasks: Task[]): Promise<string> => {
     return response.text || "Failed to generate summary.";
   } catch (error) {
     console.error("Error generating summary:", error);
-    return "Error occurred while generating the AI summary.";
+    return "Error occurred while generating the AI summary. Please check your API configuration.";
   }
 };
