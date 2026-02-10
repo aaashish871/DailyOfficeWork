@@ -47,12 +47,19 @@ export const apiService = {
 
     if (error) throw error;
     
+    // We try to insert the profile. If it fails because of RLS or Auth state, 
+    // it's okay as long as the user is registered. 
+    // Usually, a DB trigger is better, but this is a frontend-first approach.
     if (data.user) {
-      await supabase.from('profiles').insert({
-        id: data.user.id,
-        name,
-        avatar_color: avatarColor
-      });
+       try {
+         await supabase.from('profiles').upsert({
+           id: data.user.id,
+           name,
+           avatar_color: avatarColor
+         });
+       } catch (profileErr) {
+         console.warn("Profile creation pending email verification", profileErr);
+       }
     }
   },
 
@@ -70,16 +77,27 @@ export const apiService = {
       throw new Error('UNVERIFIED: Please check your email and click the verification link before signing in.');
     }
 
+    // Ensure profile exists on first successful login
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    
+    if (!profile) {
+      // Create profile if it missing (failsafe)
+      await supabase.from('profiles').insert({
+        id: user.id,
+        name: user.user_metadata?.full_name || 'User',
+        avatar_color: user.user_metadata?.avatar_color || '#6366f1'
+      });
+    }
+
     const workspace = await apiService.fetchWorkspace(user.id);
 
     return {
       user: {
         id: user.id,
-        name: profile?.name || 'User',
+        name: profile?.name || user.user_metadata?.full_name || 'User',
         email: user.email!,
         isGuest: false,
-        avatarColor: profile?.avatar_color || '#6366f1',
+        avatarColor: profile?.avatar_color || user.user_metadata?.avatar_color || '#6366f1',
         isVerified: true
       },
       tasks: workspace.tasks,
@@ -95,10 +113,10 @@ export const apiService = {
     
     return {
       id: session.user.id,
-      name: profile?.name || 'User',
+      name: profile?.name || session.user.user_metadata?.full_name || 'User',
       email: session.user.email!,
       isGuest: false,
-      avatarColor: profile?.avatar_color || '#6366f1',
+      avatarColor: profile?.avatar_color || session.user.user_metadata?.avatar_color || '#6366f1',
       isVerified: true
     };
   },

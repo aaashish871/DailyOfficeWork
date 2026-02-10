@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { apiService } from '../services/apiService';
 
@@ -16,6 +16,29 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+
+  // Handle errors or success messages coming back from email redirect
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const params = new URLSearchParams(hash.replace('#', '?'));
+      
+      // If there is an error (like expired link or localhost failure)
+      if (hash.includes('error_description')) {
+        const errorMsg = params.get('error_description')?.replace(/\+/g, ' ');
+        if (errorMsg) {
+          setError(`Note: ${errorMsg}. If you already clicked the link in your email, your account is likely verified. Please try signing in below.`);
+        }
+      } 
+      // If confirmation was successful but redirect failed back to app
+      else if (hash.includes('type=signup') || hash.includes('access_token')) {
+        setError('Email verified successfully! You can now Sign In.');
+      }
+      
+      // Clean the URL hash to keep things tidy
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   const avatarColors = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
 
@@ -35,7 +58,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         setVerificationSent(true);
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication error.');
+      let msg = err.message || 'Authentication error.';
+      if (msg.includes('Email not confirmed')) {
+        msg = 'Please verify your email first. Check your inbox (and spam folder) for the confirmation link.';
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -50,13 +77,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </div>
           <h2 className="text-2xl font-black text-slate-800 mb-2">Check Your Inbox</h2>
           <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-            A real verification email has been sent to:<br/>
+            Verification link sent to:<br/>
             <strong className="text-indigo-600">{email}</strong><br/><br/>
-            Please click the link in that email to verify your account. Once verified, you can log in from any device.
+            Click the link in the email to activate your account.
+            <br/><br/>
+            <div className="text-[10px] text-amber-700 font-bold bg-amber-50 p-4 rounded-xl border border-amber-100 text-left">
+              <i className="fa-solid fa-circle-info mr-2"></i>
+              IMPORTANT: After clicking "Confirm your mail", if you see a "Site can't be reached" error, it means your email is verified but the redirect failed. 
+              <br/><br/>
+              Just close that tab and click "Back to Sign In" below to start using the app.
+            </div>
           </p>
           <button 
             onClick={() => setVerificationSent(false)}
-            className="w-full bg-slate-900 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg"
+            className="w-full bg-slate-900 text-white font-black uppercase tracking-widest text-xs py-4 rounded-xl shadow-lg transition-all active:scale-95"
           >
             Back to Sign In
           </button>
@@ -96,9 +130,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           <form onSubmit={handleAuth} className="space-y-6">
             {error && (
-              <div className="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 flex items-center gap-3">
-                <i className="fa-solid fa-circle-exclamation"></i>
-                {error}
+              <div className={`p-4 text-xs font-bold rounded-xl border flex items-start gap-3 ${error.includes('successfully') ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                <i className={`fa-solid mt-0.5 ${error.includes('successfully') ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i>
+                <span>{error}</span>
               </div>
             )}
 
@@ -159,7 +193,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center active:scale-[0.98]"
             >
               {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : (isLogin ? 'Sign In to Server' : 'Register & Verify')}
             </button>
