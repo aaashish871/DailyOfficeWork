@@ -21,7 +21,6 @@ export const formatAppDate = (dateStr: string) => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
-  const isAdmin = user.email === 'admin@worksync.ai';
   const [allTasks, setAllTasks] = useState<Task[]>(initialData?.tasks || []);
   const [teamMembers, setTeamMembers] = useState<string[]>(initialData?.team || ['Self']);
   const [newMemberName, setNewMemberName] = useState('');
@@ -29,29 +28,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>(isAdmin ? 'admin' : 'tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'team' | 'overview' | 'stats' | 'summary'>('tasks');
   const [feedback, setFeedback] = useState<string | null>(null);
-  
-  // Admin Specific States
-  const [serverUsers, setServerUsers] = useState<any[]>([]);
-  const [dbBlob, setDbBlob] = useState('');
-  const [importText, setImportText] = useState('');
 
-  // Initial Data Pull
+  // Initial Data Pull (Silent)
   useEffect(() => {
-    if (isAdmin) {
-      apiService.getAllUsers().then(setServerUsers);
-    } else if (!initialData && !user.isGuest) {
+    if (!initialData && !user.isGuest) {
       apiService.fetchWorkspace(user.id).then(res => {
         setAllTasks(res.tasks);
         setTeamMembers(res.team);
       });
     }
-  }, [user.id, user.isGuest, isAdmin, initialData]);
+  }, [user.id, user.isGuest, initialData]);
 
-  // AUTO-SYNC TO SERVER
+  // AUTO-SYNC TO CENTRAL SERVER
   const syncToServer = useCallback(async (tasks: Task[], team: string[]) => {
-    if (user.isGuest || isAdmin) return;
+    if (user.isGuest) return;
     setIsSyncing(true);
     try {
       await apiService.syncWorkspace(user.id, tasks, team);
@@ -60,12 +52,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     } finally {
       setIsSyncing(false);
     }
-  }, [user.id, user.isGuest, isAdmin]);
+  }, [user.id, user.isGuest]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       syncToServer(allTasks, teamMembers);
-    }, 1000);
+    }, 1500);
     return () => clearTimeout(timeout);
   }, [allTasks, teamMembers, syncToServer]);
 
@@ -79,22 +71,37 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     setAllTasks(prev => [newTask, ...prev]);
   };
 
-  const handleExportDB = () => {
-    const blob = apiService.exportDatabase();
-    setDbBlob(blob);
-    navigator.clipboard.writeText(blob);
-    setFeedback("Server Snapshot copied! Paste this on your other device.");
-    setTimeout(() => setFeedback(null), 4000);
+  const updateTaskStatus = (id: string, status: TaskStatus) => {
+    setAllTasks(prev => prev.map(t => t.id === id ? { ...t, status, completedAt: status === TaskStatus.DONE ? Date.now() : undefined } : t));
   };
 
-  const handleImportDB = () => {
-    try {
-      apiService.importDatabase(importText);
-      setFeedback("Server Mirroring Successful! Refreshing...");
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (e) {
-      setFeedback("Error: Invalid Mirror Blob");
+  const updateTaskResponsible = (id: string, responsible: string) => {
+    setAllTasks(prev => prev.map(t => t.id === id ? { ...t, blocker: responsible } : t));
+  };
+
+  const moveTask = (id: string, newDate: string, reason: string) => {
+    setAllTasks(prev => prev.map(t => t.id === id ? { ...t, logDate: newDate, postponedReason: reason } : t));
+  };
+
+  const deleteTask = (id: string) => {
+    if (window.confirm("Remove this entry?")) setAllTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  const addTeamMember = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newMemberName.trim();
+    if (name && !teamMembers.includes(name)) {
+      setTeamMembers(prev => [...prev, name]);
+      setNewMemberName('');
     }
+  };
+
+  const handleGenerateSummary = async () => {
+    setIsGenerating(true);
+    const summary = await generateDailySummary(filteredTasks);
+    setAiSummary(summary);
+    setIsGenerating(false);
+    setActiveTab('summary');
   };
 
   const statsData = [
@@ -105,169 +112,142 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      {isSyncing && (
-        <div className="fixed bottom-6 right-6 z-50 bg-indigo-600 text-white px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 animate-bounce">
-          <i className="fa-solid fa-circle-notch fa-spin"></i>
-          <span className="text-[10px] font-black uppercase tracking-widest">Server Sync...</span>
+      {/* Date Navigation & Sync State */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex items-center gap-4">
+          <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"><i className="fa-solid fa-chevron-left"></i></button>
+          <div className="text-center min-w-[150px]">
+            <span className="block text-[10px] font-black uppercase text-indigo-500 tracking-widest">Journaling For</span>
+            <span className="text-lg font-bold text-slate-800">{formatAppDate(selectedDate)}</span>
+          </div>
+          <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"><i className="fa-solid fa-chevron-right"></i></button>
         </div>
-      )}
-
-      {feedback && (
-        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-bold rounded-xl flex items-center justify-between shadow-lg animate-in slide-in-from-top-4">
-          <span><i className="fa-solid fa-circle-check mr-2"></i>{feedback}</span>
-          <button onClick={() => setFeedback(null)} className="text-slate-400"><i className="fa-solid fa-xmark"></i></button>
+        
+        <div className="flex items-center gap-4">
+           {isSyncing && (
+             <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100 animate-pulse">
+                <i className="fa-solid fa-cloud-arrow-up text-[10px]"></i>
+                <span className="text-[10px] font-black uppercase tracking-widest">Saving...</span>
+             </div>
+           )}
+           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-sm border border-slate-200 p-2 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"/>
         </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 mb-6 gap-6 overflow-x-auto no-scrollbar">
-        {isAdmin ? (
-          <button className="pb-4 text-sm font-black text-indigo-600 relative flex items-center gap-2">
-            <i className="fa-solid fa-server"></i> Server Admin Console
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-t-full"></div>
-          </button>
-        ) : (
-          [
-            { id: 'tasks', label: 'Work Log', icon: 'fa-clipboard-list' },
-            { id: 'team', label: 'Team', icon: 'fa-users' },
-            { id: 'overview', label: 'Overview', icon: 'fa-gauge-high' },
-            { id: 'stats', label: 'Analytics', icon: 'fa-chart-pie' },
-            { id: 'summary', label: 'AI Report', icon: 'fa-wand-magic-sparkles' }
-          ].map(tab => (
-            <button 
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              <i className={`fa-solid ${tab.icon}`}></i>
-              {tab.label}
-              {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-t-full"></div>}
-            </button>
-          ))
-        )}
       </div>
 
-      <div className="min-h-[400px]">
-        {isAdmin ? (
-          <div className="space-y-8 animate-in fade-in duration-500">
-            {/* User Inspection */}
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-              <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">
-                <i className="fa-solid fa-users-gear text-indigo-500"></i> Registered Accounts
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Name</th>
-                      <th className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Email Address</th>
-                      <th className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Password</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {serverUsers.length === 0 ? (
-                      <tr><td colSpan={3} className="py-8 text-center text-slate-400 text-sm italic">No users registered on this browser yet.</td></tr>
-                    ) : (
-                      serverUsers.map(u => (
-                        <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                          <td className="py-4 font-bold text-slate-700">{u.name}</td>
-                          <td className="py-4 text-slate-600 text-sm">{u.email}</td>
-                          <td className="py-4 font-mono text-xs text-indigo-600 font-bold">{u.password}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 mb-8 gap-8 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'tasks', label: 'Work Log', icon: 'fa-clipboard-list' },
+          { id: 'team', label: 'My Team', icon: 'fa-users' },
+          { id: 'overview', label: 'Overview', icon: 'fa-gauge' },
+          { id: 'summary', label: 'AI Summary', icon: 'fa-wand-magic-sparkles' }
+        ].map(tab => (
+          <button 
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`pb-4 text-xs font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <i className={`fa-solid ${tab.icon}`}></i>
+            {tab.label}
+            {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-t-full"></div>}
+          </button>
+        ))}
+      </div>
 
-            {/* Server Mirroring */}
-            <div className="bg-slate-900 text-white p-8 rounded-2xl shadow-xl">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <i className="fa-solid fa-bridge text-indigo-400"></i> Server Mirroring (Sync Devices)
-              </h2>
-              <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-                To move all registered users and their tasks to another phone or laptop: 
-                <br/>1. On Laptop: Click <strong>"Export Server Blob"</strong>. 
-                <br/>2. On Mobile: Paste that code in the <strong>"Restore"</strong> box below.
-              </p>
+      <div className="min-h-[500px] animate-in fade-in duration-500">
+        {activeTab === 'tasks' && (
+          <div className="space-y-6">
+            <TaskForm onAdd={addTask} teamMembers={teamMembers} />
+            <TaskList 
+              tasks={filteredTasks} 
+              teamMembers={teamMembers} 
+              onUpdateStatus={updateTaskStatus} 
+              onUpdateResponsible={updateTaskResponsible} 
+              onDelete={deleteTask} 
+              onMoveTask={moveTask} 
+            />
+          </div>
+        )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Step 1: Export</span>
-                  <button 
-                    onClick={handleExportDB}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 py-3 rounded-xl font-bold text-sm transition-all shadow-lg active:scale-95"
-                  >
-                    Copy Global Server Data
-                  </button>
-                  {dbBlob && (
-                    <div className="p-3 bg-white/5 rounded-lg font-mono text-[9px] break-all line-clamp-2 text-indigo-300">
-                      {dbBlob}
+        {activeTab === 'team' && (
+          <div className="bg-white p-10 rounded-3xl shadow-sm border border-slate-200">
+            <div className="max-w-xl mx-auto">
+              <h2 className="text-2xl font-black text-slate-800 mb-2 flex items-center gap-3">
+                <i className="fa-solid fa-users text-indigo-600"></i> Team Members
+              </h2>
+              <p className="text-slate-400 text-sm mb-8">Manage users you can assign tasks or blockers to.</p>
+              
+              <form onSubmit={addTeamMember} className="flex gap-2 mb-10">
+                <input 
+                  type="text" 
+                  value={newMemberName} 
+                  onChange={(e) => setNewMemberName(e.target.value)} 
+                  placeholder="Collaborator name..." 
+                  className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                />
+                <button type="submit" className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-800 transition-all">Add</button>
+              </form>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {teamMembers.map(m => (
+                  <div key={m} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl group hover:border-indigo-200 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center font-black text-indigo-600 shadow-sm">{m.charAt(0)}</div>
+                      <span className="font-bold text-slate-700">{m}</span>
                     </div>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Step 2: Restore</span>
-                  <textarea 
-                    value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
-                    placeholder="Paste Server Blob here..."
-                    className="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-3 text-[10px] outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
-                  />
-                  <button 
-                    onClick={handleImportDB}
-                    disabled={!importText.trim()}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-20 active:scale-95"
-                  >
-                    Restore/Sync Server
-                  </button>
-                </div>
+                    {m !== 'Self' && (
+                      <button 
+                        onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))}
+                        className="text-slate-300 hover:text-red-500 transition-colors"
+                      >
+                        <i className="fa-solid fa-circle-xmark"></i>
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        ) : (
-          <div className="animate-in fade-in duration-300">
-            {activeTab === 'tasks' && (
-              <div className="space-y-6">
-                <TaskForm onAdd={addTask} teamMembers={teamMembers} />
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 mb-6 flex justify-between items-center">
-                   <div className="flex items-center gap-4">
-                      <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"><i className="fa-solid fa-chevron-left"></i></button>
-                      <span className="font-bold text-slate-700">{formatAppDate(selectedDate)}</span>
-                      <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"><i className="fa-solid fa-chevron-right"></i></button>
-                   </div>
-                   <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-xs border border-slate-200 p-2 rounded-lg outline-none"/>
-                </div>
-                <TaskList tasks={filteredTasks} teamMembers={teamMembers} onUpdateStatus={() => {}} onUpdateResponsible={() => {}} onDelete={() => {}} onMoveTask={() => {}} />
-              </div>
-            )}
+        )}
 
-            {activeTab === 'team' && (
-              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2"><i className="fa-solid fa-users text-indigo-500"></i> Team Members</h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {teamMembers.map(m => (
-                    <div key={m} className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold text-slate-700">{m}</div>
-                  ))}
-                </div>
+        {activeTab === 'overview' && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center shadow-sm">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Pending</span><br/>
+                <span className="text-5xl font-black text-slate-800">{statsData[0].value + statsData[1].value}</span>
               </div>
-            )}
+              <div className="bg-indigo-600 p-8 rounded-3xl border border-indigo-500 text-center shadow-xl shadow-indigo-100">
+                <span className="text-[10px] font-black uppercase text-indigo-200 tracking-widest">Completed</span><br/>
+                <span className="text-5xl font-black text-white">{statsData[2].value}</span>
+              </div>
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center shadow-sm flex flex-col items-center justify-center gap-2">
+                <button 
+                  onClick={handleGenerateSummary}
+                  disabled={isGenerating || filteredTasks.length === 0}
+                  className="w-full bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] py-4 rounded-2xl hover:bg-slate-800 transition-all disabled:opacity-20"
+                >
+                  {isGenerating ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Summarize Day with AI'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-            {activeTab === 'overview' && (
-               <div className="grid grid-cols-3 gap-6">
-                 <div className="bg-white p-6 rounded-2xl border border-slate-200 text-center">
-                    <span className="text-slate-500 text-xs uppercase font-black tracking-widest">Tasks Done</span><br/>
-                    <span className="text-4xl font-black text-emerald-600">{statsData[2].value}</span>
-                 </div>
-               </div>
-            )}
-            
-            {activeTab === 'summary' && (
-              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-                <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2"><i className="fa-solid fa-robot text-indigo-500"></i> AI Generated Report</h2>
-                {aiSummary ? <div className="prose prose-slate max-w-none whitespace-pre-wrap text-slate-700 border-l-4 border-indigo-100 pl-6 leading-relaxed">{aiSummary}</div> : <div className="text-center py-20 text-slate-400">No report generated for this date.</div>}
+        {activeTab === 'summary' && (
+          <div className="bg-white p-10 rounded-3xl shadow-sm border border-slate-200 max-w-3xl mx-auto">
+            <h2 className="text-2xl font-black mb-8 text-slate-800 flex items-center gap-3">
+              <i className="fa-solid fa-robot text-indigo-600"></i> AI Intelligence Report
+            </h2>
+            {aiSummary ? (
+              <div className="prose prose-slate max-w-none whitespace-pre-wrap text-slate-600 border-l-4 border-indigo-100 pl-8 leading-relaxed font-medium">
+                {aiSummary}
+              </div>
+            ) : (
+              <div className="text-center py-20 text-slate-300">
+                <i className="fa-solid fa-wand-magic-sparkles text-4xl mb-4 block"></i>
+                <p className="font-bold">No summary generated for this date.</p>
+                <p className="text-xs">Go to Overview and click 'Summarize Day' to use AI.</p>
               </div>
             )}
           </div>

@@ -2,107 +2,106 @@
 import { User, Task } from '../types';
 
 /**
- * MOCK CLOUD API SERVICE
- * Simulation of a central company server.
+ * CENTRAL COMPANY SERVER SIMULATOR
+ * This service handles authentication and data persistence.
+ * For true cross-device use, replace localStorage with a real API endpoint.
  */
 
-const MOCK_DELAY = 400;
+const MOCK_DELAY = 800;
 
-const getGlobalDatabase = () => {
-  const db = localStorage.getItem('ws_cloud_db');
+const getGlobalDB = () => {
+  const db = localStorage.getItem('worksync_central_db');
   return db ? JSON.parse(db) : { users: [], workspaces: {} };
 };
 
-const saveGlobalDatabase = (db: any) => {
-  localStorage.setItem('ws_cloud_db', JSON.stringify(db));
+const saveGlobalDB = (db: any) => {
+  localStorage.setItem('worksync_central_db', JSON.stringify(db));
 };
 
 export const apiService = {
   /**
-   * ADMIN: Get entire DB string for mirroring
+   * Register user and "trigger" verification email
    */
-  exportDatabase: (): string => {
-    return btoa(JSON.stringify(getGlobalDatabase()));
-  },
-
-  /**
-   * ADMIN: Restore entire DB from string
-   */
-  importDatabase: (data: string): void => {
-    try {
-      const parsed = JSON.parse(atob(data));
-      if (parsed.users && parsed.workspaces) {
-        saveGlobalDatabase(parsed);
-      }
-    } catch (e) {
-      throw new Error("Invalid Server Data Blob");
-    }
-  },
-
-  /**
-   * ADMIN: List all users (excluding admin itself)
-   */
-  getAllUsers: async (): Promise<any[]> => {
-    await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-    const db = getGlobalDatabase();
-    return db.users;
-  },
-
   register: async (name: string, email: string, password: string, avatarColor: string): Promise<User> => {
     await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
-    const db = getGlobalDatabase();
+    const db = getGlobalDB();
     
     if (db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
-      throw new Error('User already exists on server.');
+      throw new Error('An account with this email already exists on our server.');
     }
 
-    const newUser: User = { id: crypto.randomUUID(), name, email, isGuest: false, avatarColor };
+    const newUser: User = { 
+      id: crypto.randomUUID(), 
+      name, 
+      email: email.toLowerCase(), 
+      isGuest: false, 
+      avatarColor,
+      isVerified: false // Users start unverified
+    };
+
     db.users.push({ ...newUser, password });
     db.workspaces[newUser.id] = { tasks: [], team: ['Self', 'Rahul', 'Priya', 'Amit'] };
     
-    saveGlobalDatabase(db);
+    saveGlobalDB(db);
     return newUser;
   },
 
-  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[]; isAdmin?: boolean }> => {
+  /**
+   * Simulate the user clicking the link in their email
+   */
+  verifyEmail: async (email: string): Promise<void> => {
     await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
+    const db = getGlobalDB();
+    const userIndex = db.users.findIndex((u: any) => u.email === email.toLowerCase());
     
-    // Master Admin Login
-    if (email === 'admin@worksync.ai' && password === 'admin123') {
-      const adminUser: User = {
-        id: 'admin_master',
-        name: 'Server Admin',
-        email: 'admin@worksync.ai',
-        isGuest: false,
-        avatarColor: '#1e293b'
-      };
-      return { user: adminUser, tasks: [], team: [], isAdmin: true };
+    if (userIndex !== -1) {
+      db.users[userIndex].isVerified = true;
+      saveGlobalDB(db);
+    } else {
+      throw new Error("Verification failed: User not found.");
     }
+  },
 
-    const db = getGlobalDatabase();
-    const found = db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+  /**
+   * Login with strict verification check
+   */
+  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[] }> => {
+    await new Promise(resolve => setTimeout(resolve, MOCK_DELAY));
+    const db = getGlobalDB();
+    
+    const found = db.users.find((u: any) => u.email === email.toLowerCase() && u.password === password);
     
     if (!found) {
-      throw new Error('Invalid email or password. If you registered on another device, you must use "Mirror Server" in the Admin panel first.');
+      throw new Error('Invalid email or password. Please check your credentials.');
     }
 
-    const user: User = { id: found.id, name: found.name, email: found.email, isGuest: false, avatarColor: found.avatarColor };
-    const workspace = db.workspaces[user.id] || { tasks: [], team: ['Self'] };
+    if (!found.isVerified) {
+      throw new Error('UNVERIFIED: Please check your email and verify your account before logging in.');
+    }
 
+    const user: User = { 
+      id: found.id, 
+      name: found.name, 
+      email: found.email, 
+      isGuest: false, 
+      avatarColor: found.avatarColor,
+      isVerified: found.isVerified
+    };
+    
+    const workspace = db.workspaces[user.id] || { tasks: [], team: ['Self'] };
     return { user, ...workspace };
   },
 
   syncWorkspace: async (userId: string, tasks: Task[], team: string[]): Promise<void> => {
-    if (userId === 'admin_master') return;
-    const db = getGlobalDatabase();
+    const db = getGlobalDB();
     if (db.workspaces[userId]) {
       db.workspaces[userId] = { tasks, team };
-      saveGlobalDatabase(db);
+      saveGlobalDB(db);
     }
   },
 
   fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[] }> => {
-    const db = getGlobalDatabase();
+    const db = getGlobalDB();
     return db.workspaces[userId] || { tasks: [], team: ['Self'] };
   }
 };

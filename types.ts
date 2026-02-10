@@ -17,6 +17,7 @@ export interface User {
   email: string;
   isGuest: boolean;
   avatarColor: string;
+  isVerified: boolean; // Added for central server verification flow
 }
 
 export interface Task {
@@ -28,14 +29,14 @@ export interface Task {
   category: string;
   createdAt: number;
   completedAt?: number;
-  dueDate?: string; // Target completion date
-  logDate: string;  // The date this task belongs to (YYYY-MM-DD)
-  blocker?: string; // Information about why it's pending/blocked
-  postponedReason?: string; // Why this task was moved from its original date
+  dueDate?: string; 
+  logDate: string;  
+  blocker?: string; 
+  postponedReason?: string; 
 }
 
 export interface DailyLog {
-  date: string; // YYYY-MM-DD
+  date: string; 
   tasks: Task[];
   summary?: string;
 }
