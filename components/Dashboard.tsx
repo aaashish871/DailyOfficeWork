@@ -117,9 +117,9 @@ const Dashboard: React.FC = () => {
   };
 
   const initiateRemoveMember = (name: string) => {
-    // 1. Check for active tasks across ALL logs
+    // 1. Check for active tasks across ALL logs with safety trimming
     const activeTasks = allTasks.filter(task => 
-      task.blocker === name && 
+      task.blocker?.trim() === name.trim() && 
       (task.status === TaskStatus.TODO || task.status === TaskStatus.IN_PROGRESS)
     );
 
@@ -140,7 +140,7 @@ const Dashboard: React.FC = () => {
     setTeamMembers(prev => prev.filter(m => m !== nameToRemove));
     
     setConfirmDelete(null);
-    setFeedback(`Member "${nameToRemove}" has been removed from the team.`);
+    setFeedback(`Member "${nameToRemove}" has been removed.`);
     setTimeout(() => setFeedback(null), 4000);
   };
 
@@ -162,7 +162,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* 1. Deletion BLOCKED Modal (Strict protection) */}
+      {/* 1. Deletion BLOCKED Modal */}
       {deletionError && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
@@ -172,11 +172,11 @@ const Dashboard: React.FC = () => {
               </div>
               <h3 className="text-xl font-black text-slate-800 mb-2">Deletion Blocked</h3>
               <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-                You cannot remove <span className="font-bold text-indigo-600">"{deletionError.name}"</span> because they still have <span className="font-bold text-slate-800">{deletionError.tasks.length}</span> active task(s) in progress.
+                You cannot remove <span className="font-bold text-indigo-600">"{deletionError.name}"</span> because they still have <span className="font-bold text-slate-800">{deletionError.tasks.length}</span> active task(s).
               </p>
               
               <div className="bg-slate-50 rounded-2xl p-4 text-left border border-slate-100 mb-6">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-2 text-center border-b border-slate-200 pb-2">Unfinished Work</span>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-2 text-center border-b border-slate-200 pb-2">Active Work Items</span>
                 <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar mt-3">
                   {deletionError.tasks.map(t => (
                     <li key={t.id} className="text-xs text-slate-600 flex items-start gap-2">
@@ -188,8 +188,8 @@ const Dashboard: React.FC = () => {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-4 text-[10px] text-slate-500 font-medium leading-tight bg-white p-2 rounded-lg border border-slate-200 shadow-sm italic">
-                   Help: All tasks must be marked as 'DONE' or re-assigned before a member can be removed.
+                <p className="mt-4 text-[10px] text-slate-500 font-medium leading-tight bg-white p-2 rounded-lg border border-slate-200 shadow-sm italic text-center">
+                   Complete or re-assign these tasks before removing.
                 </p>
               </div>
 
@@ -197,39 +197,39 @@ const Dashboard: React.FC = () => {
                 onClick={() => setDeletionError(null)}
                 className="w-full bg-slate-800 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl hover:bg-slate-900 transition-all shadow-lg active:scale-[0.98]"
               >
-                I'll check those tasks
+                Understood
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. Deletion CONFIRMATION Modal (User decision) */}
+      {/* 2. Deletion CONFIRMATION Modal */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in zoom-in-95 duration-200">
           <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200">
             <div className="p-8 text-center">
               <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-amber-100">
-                <i className="fa-solid fa-triangle-exclamation text-2xl"></i>
+                <i className="fa-solid fa-trash-can text-2xl"></i>
               </div>
-              <h3 className="text-xl font-black text-slate-800 mb-2">Remove Member?</h3>
+              <h3 className="text-xl font-black text-slate-800 mb-2">Confirm Removal</h3>
               <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                Are you sure you want to remove <span className="font-bold text-slate-900">"{confirmDelete}"</span>? 
-                <br/>Their past completed logs will remain visible, but they won't appear in new task assignments.
+                Remove <span className="font-bold text-slate-900">"{confirmDelete}"</span> from the team? 
+                <br/>Existing logs will not be deleted.
               </p>
               
               <div className="flex flex-col gap-3">
                 <button 
                   onClick={executeRemoveMember}
-                  className="w-full bg-red-500 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl hover:bg-red-600 transition-all shadow-lg shadow-red-100 active:scale-[0.97]"
+                  className="w-full bg-red-500 text-white font-black uppercase tracking-widest text-sm py-4 rounded-2xl hover:bg-red-600 transition-all shadow-lg active:scale-[0.97]"
                 >
-                  Yes, Remove Them
+                  Confirm Removal
                 </button>
                 <button 
                   onClick={() => setConfirmDelete(null)}
                   className="w-full bg-slate-100 text-slate-600 font-black uppercase tracking-widest text-xs py-3 rounded-2xl hover:bg-slate-200 transition-all"
                 >
-                  Keep Member
+                  Cancel
                 </button>
               </div>
             </div>
@@ -316,14 +316,14 @@ const Dashboard: React.FC = () => {
             </form>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {teamMembers.map(member => (
-                <div key={member} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 transition-all hover:border-indigo-200 hover:shadow-sm group">
+                <div key={member} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 transition-all hover:border-indigo-200 hover:shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs uppercase">{member.charAt(0)}</div>
                     <span className="font-medium text-slate-700">{member}</span>
                   </div>
                   <button 
                     onClick={() => initiateRemoveMember(member)} 
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100" 
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all" 
                     title="Remove member"
                   >
                     <i className="fa-solid fa-trash-can text-sm"></i>
@@ -331,7 +331,7 @@ const Dashboard: React.FC = () => {
                 </div>
               ))}
             </div>
-            <p className="text-[10px] text-slate-400 mt-8 italic text-center uppercase tracking-widest font-bold">Only members with no active tasks can be removed</p>
+            <p className="text-[10px] text-slate-400 mt-8 italic text-center uppercase tracking-widest font-bold">Members with no active tasks can be removed</p>
           </div>
         )}
 
