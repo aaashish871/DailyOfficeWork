@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority } from '../types';
 
 interface TaskListProps {
-  tasks: Task[];
+  tasks: Array<Task>;
   teamMembers: string[];
   onUpdateStatus: (id: string, status: TaskStatus) => void;
   onUpdateResponsible: (id: string, responsible: string) => void;
@@ -33,7 +33,6 @@ const TaskList: React.FC<TaskListProps> = ({
   const [moveDate, setMoveDate] = useState('');
   const [moveReason, setMoveReason] = useState('');
   
-  // Inline duration editing state
   const [editingDurationId, setEditingDurationId] = useState<string | null>(null);
   const [tempDuration, setTempDuration] = useState<string>('');
   const durationInputRef = useRef<HTMLInputElement>(null);
@@ -45,187 +44,135 @@ const TaskList: React.FC<TaskListProps> = ({
     }
   }, [editingDurationId]);
 
-  const getPriorityColor = (priority: TaskPriority) => {
-    switch (priority) {
-      case TaskPriority.HIGH: return 'bg-red-100 text-red-700 border-red-200';
-      case TaskPriority.MEDIUM: return 'bg-amber-100 text-amber-700 border-amber-200';
-      case TaskPriority.LOW: return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
-  };
-
-  const isOverdue = (dueDate?: string) => {
-    if (!dueDate) return false;
-    const today = new Date().toISOString().split('T')[0];
-    return dueDate < today;
-  };
-
-  const handleConfirmMove = (id: string) => {
-    if (moveDate && moveReason.trim()) {
-      onMoveTask(id, moveDate, moveReason);
-      setMovingTaskId(null);
-      setMoveDate('');
-      setMoveReason('');
-    }
-  };
-
-  const startEditingDuration = (task: Task) => {
-    setEditingDurationId(task.id);
-    setTempDuration(task.duration?.toString() || '0');
-  };
-
   const saveDuration = (id: string) => {
     const val = parseFloat(tempDuration);
-    if (!isNaN(val)) {
-      onUpdateDuration(id, val);
-    }
+    if (!isNaN(val)) onUpdateDuration(id, val);
     setEditingDurationId(null);
+  };
+
+  const getPriorityDot = (priority: TaskPriority) => {
+    switch (priority) {
+      case TaskPriority.HIGH: return 'bg-red-500';
+      case TaskPriority.MEDIUM: return 'bg-amber-500';
+      case TaskPriority.LOW: return 'bg-emerald-500';
+      default: return 'bg-slate-400';
+    }
   };
 
   if (tasks.length === 0) {
     return (
-      <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
-        <i className="fa-solid fa-clipboard-list text-5xl text-slate-200 mb-4"></i>
-        <p className="text-slate-400 font-medium">No tasks logged for this day yet.</p>
-        <p className="text-xs text-slate-300 mt-1">Start by adding a new task entry above.</p>
+      <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
+        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i className="fa-solid fa-mug-hot text-2xl text-slate-300"></i>
+        </div>
+        <p className="text-slate-500 font-black uppercase text-[11px] tracking-[0.2em]">Your diary is empty</p>
+        <p className="text-xs text-slate-400 mt-1">Log an activity to track your progress.</p>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-4">
-      {tasks.map((task) => {
-        const currentResponsible = task.blocker || 'Self';
-        const isFormerMember = !teamMembers.includes(currentResponsible);
+  // Sort tasks by creation time to create a timeline feel
+  const sortedTasks = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
 
+  return (
+    <div className="relative space-y-4">
+      {/* Decorative timeline line */}
+      <div className="absolute left-[27px] top-4 bottom-4 w-0.5 bg-slate-100 -z-10 hidden md:block"></div>
+
+      {sortedTasks.map((task) => {
+        const isSelf = !task.blocker || task.blocker === 'Self';
+        
         return (
           <div 
             key={task.id} 
-            className={`bg-white p-5 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md ${task.status === TaskStatus.DONE ? 'opacity-80' : ''}`}
+            className="group relative bg-white pl-4 pr-6 py-4 md:pl-12 rounded-2xl border border-slate-200 shadow-sm transition-all hover:shadow-md hover:border-indigo-100"
           >
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+            {/* Timeline indicator circle */}
+            <div className={`absolute left-[20px] top-6 w-4 h-4 rounded-full border-4 border-white shadow-sm -ml-0.5 hidden md:flex items-center justify-center transition-colors ${task.status === TaskStatus.DONE ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+               {task.status === TaskStatus.DONE && <i className="fa-solid fa-check text-[6px] text-white"></i>}
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${getPriorityColor(task.priority)}`}>
-                    {task.priority}
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    {new Date(task.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
-                    {task.category}
-                  </span>
-                  
-                  {/* Editable Duration Badge */}
-                  <div className="relative">
-                    {editingDurationId === task.id ? (
-                      <div className="flex items-center bg-slate-900 rounded-full px-1 py-0.5 border border-indigo-500 shadow-lg ring-2 ring-indigo-500/20">
-                        <input
-                          ref={durationInputRef}
-                          type="number"
-                          step="any"
-                          min="0"
-                          value={tempDuration}
-                          onChange={(e) => setTempDuration(e.target.value)}
-                          onBlur={() => saveDuration(task.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveDuration(task.id);
-                            if (e.key === 'Escape') setEditingDurationId(null);
-                          }}
-                          className="bg-transparent text-white text-[10px] font-black w-12 outline-none text-center px-1"
-                        />
-                        <span className="text-[10px] font-black text-indigo-400 pr-1.5">H</span>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => startEditingDuration(task)}
-                        className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 ${
-                          task.duration !== undefined 
-                            ? 'bg-slate-900 text-white' 
-                            : 'bg-slate-100 text-slate-400 border border-slate-200 border-dashed hover:bg-slate-200'
-                        }`}
-                        title="Click to edit duration"
-                      >
-                        <i className="fa-solid fa-clock"></i>
-                        {task.duration !== undefined ? `${task.duration}h` : 'Add Time'}
-                      </button>
-                    )}
+                  <span className="text-slate-200">•</span>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${getPriorityDot(task.priority)}`}></div>
+                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{task.category}</span>
                   </div>
-
-                  {task.dueDate && (
-                    <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1.5 ${isOverdue(task.dueDate) && task.status !== TaskStatus.DONE ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                      <i className="fa-solid fa-calendar-day"></i>
-                      Target: {formatAppDate(task.dueDate)}
-                    </span>
-                  )}
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                    Logged at {new Date(task.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+                  
+                  {/* Responsible badge */}
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter ${isSelf ? 'bg-slate-50 text-slate-400 border border-slate-100' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
+                    <i className={`fa-solid ${isSelf ? 'fa-user' : 'fa-users'}`}></i>
+                    {isSelf ? 'Self' : task.blocker}
+                  </div>
                 </div>
                 
-                <h3 className={`font-bold text-lg leading-tight ${task.status === TaskStatus.DONE ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                <h3 className="font-bold text-slate-800 leading-snug">
                   {task.title}
                 </h3>
-                
-                {task.description && (
-                  <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">{task.description}</p>
-                )}
-
-                {task.postponedReason && (
-                  <div className="mt-3 bg-indigo-50/50 border border-indigo-100 p-2 rounded-lg flex items-start gap-2 text-xs text-indigo-700 italic">
-                    <i className="fa-solid fa-clock-rotate-left mt-0.5"></i>
-                    <span><strong>Reason for Postponing:</strong> {task.postponedReason}</span>
-                  </div>
-                )}
               </div>
 
-              <div className="flex flex-col items-end gap-3 min-w-[200px]">
-                <div className="w-full space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-right">Responsible</label>
-                  <select
-                    value={currentResponsible}
-                    onChange={(e) => onUpdateResponsible(task.id, e.target.value)}
-                    className={`w-full text-xs font-bold px-3 py-1.5 rounded-lg border outline-none focus:ring-1 focus:ring-indigo-500 transition-all text-right cursor-pointer ${isFormerMember ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
-                  >
-                    {isFormerMember && (
-                      <option value={currentResponsible}>{currentResponsible} (Former)</option>
-                    )}
-                    {teamMembers.map(member => (
-                      <option key={member} value={member}>{member}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2 w-full justify-end">
-                  <select
-                    value={task.status}
-                    onChange={(e) => onUpdateStatus(task.id, e.target.value as TaskStatus)}
-                    className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg outline-none transition-all border cursor-pointer ${
-                      task.status === TaskStatus.DONE 
-                        ? 'bg-emerald-500 text-white border-emerald-600' 
-                        : task.status === TaskStatus.IN_PROGRESS 
-                        ? 'bg-blue-500 text-white border-blue-600' 
-                        : 'bg-slate-100 text-slate-600 border-slate-200'
-                    }`}
-                  >
-                    <option value={TaskStatus.TODO}>To Do</option>
-                    <option value={TaskStatus.IN_PROGRESS}>Working</option>
-                    <option value={TaskStatus.DONE}>Complete</option>
-                  </select>
-                  
-                  {task.status !== TaskStatus.DONE && (
-                    <button
-                      onClick={() => setMovingTaskId(task.id === movingTaskId ? null : task.id)}
-                      className={`p-1.5 rounded-lg transition-all ${movingTaskId === task.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
-                      title="Postpone/Move to another day"
+              <div className="flex items-center gap-4 shrink-0">
+                {/* Duration Badge with Edit Capability */}
+                <div className="relative">
+                  {editingDurationId === task.id ? (
+                    <div className="flex items-center bg-slate-900 rounded-xl px-2 py-1.5 border border-indigo-500 shadow-lg ring-4 ring-indigo-500/10">
+                      <input
+                        ref={durationInputRef}
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={tempDuration}
+                        onChange={(e) => setTempDuration(e.target.value)}
+                        onBlur={() => saveDuration(task.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveDuration(task.id);
+                          if (e.key === 'Escape') setEditingDurationId(null);
+                        }}
+                        className="bg-transparent text-white text-xs font-black w-14 outline-none text-center"
+                      />
+                      <span className="text-[10px] font-black text-indigo-400">HRS</span>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => { setEditingDurationId(task.id); setTempDuration(task.duration?.toString() || '0'); }}
+                      className={`h-10 px-4 rounded-xl flex items-center gap-2 border transition-all hover:bg-slate-50 active:scale-95 ${task.duration ? 'bg-white border-slate-200 text-slate-700' : 'bg-slate-50 border-dashed border-slate-300 text-slate-300'}`}
+                      title="Click to log time"
                     >
-                      <i className="fa-solid fa-calendar-plus"></i>
+                      <i className="fa-solid fa-stopwatch text-indigo-400"></i>
+                      <span className="text-sm font-black tracking-tight">{task.duration !== undefined ? `${task.duration}h` : 'Add Time'}</span>
                     </button>
                   )}
+                </div>
 
+                {/* Simplified Toggle for ongoing/done if they still want it occasionally */}
+                <button 
+                  onClick={() => onUpdateStatus(task.id, task.status === TaskStatus.DONE ? TaskStatus.IN_PROGRESS : TaskStatus.DONE)}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${task.status === TaskStatus.DONE ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100' : 'bg-slate-100 text-slate-400'}`}
+                  title={task.status === TaskStatus.DONE ? "Mark as Ongoing" : "Mark as Completed"}
+                >
+                  <i className={`fa-solid ${task.status === TaskStatus.DONE ? 'fa-check' : 'fa-circle-notch'}`}></i>
+                </button>
+
+                {/* Actions Group */}
+                <div className="flex items-center bg-slate-50 rounded-xl p-1 border border-slate-100">
+                  <button
+                    onClick={() => setMovingTaskId(task.id === movingTaskId ? null : task.id)}
+                    className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+                    title="Postpone"
+                  >
+                    <i className="fa-solid fa-calendar-arrow-right"></i>
+                  </button>
                   <button
                     onClick={() => onDelete(task.id)}
-                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                    title="Delete task"
+                    className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                    title="Delete"
                   >
-                    <i className="fa-solid fa-trash-can"></i>
+                    <i className="fa-solid fa-trash-can text-sm"></i>
                   </button>
                 </div>
               </div>
@@ -233,46 +180,41 @@ const TaskList: React.FC<TaskListProps> = ({
 
             {movingTaskId === task.id && (
               <div className="mt-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100 animate-in slide-in-from-top-2">
-                <h4 className="text-xs font-black text-indigo-700 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <i className="fa-solid fa-reply-all transform rotate-180"></i>
-                  Postpone Task
-                </h4>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
+                    <i className="fa-solid fa-clock-rotate-left"></i>
+                    Postpone Activity
+                  </h4>
+                  <button onClick={() => setMovingTaskId(null)} className="text-indigo-300 hover:text-indigo-500"><i className="fa-solid fa-xmark"></i></button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Select New Date</label>
+                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Move to Date</label>
                     <input 
                       type="date" 
                       value={moveDate}
                       onChange={(e) => setMoveDate(e.target.value)}
-                      className="w-full text-sm p-2 rounded border border-indigo-200 outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full text-sm p-2 rounded-lg border border-indigo-100 outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                     />
-                    {moveDate && <p className="text-[10px] font-bold text-indigo-600">{formatAppDate(moveDate)}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Reason for not completing on {formatAppDate(task.logDate)}</label>
-                    <textarea 
-                      placeholder="e.g., Higher priority emergency tasks took over..."
+                    <label className="text-[10px] font-bold text-indigo-400 uppercase">Reason (Why move this?)</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Need more data from team..."
                       value={moveReason}
                       onChange={(e) => setMoveReason(e.target.value)}
-                      className="w-full text-sm p-2 rounded border border-indigo-200 outline-none focus:ring-2 focus:ring-indigo-500 h-16 resize-none"
+                      className="w-full text-sm p-2 rounded-lg border border-indigo-100 outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                     />
                   </div>
                 </div>
-                <div className="mt-3 flex justify-end gap-2">
-                  <button 
-                    onClick={() => setMovingTaskId(null)}
-                    className="text-xs font-bold text-slate-500 hover:text-slate-700 px-3 py-1.5"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={() => handleConfirmMove(task.id)}
-                    disabled={!moveDate || !moveReason.trim()}
-                    className="bg-indigo-600 text-white text-xs font-black uppercase tracking-widest px-4 py-1.5 rounded-lg disabled:opacity-30 transition-all hover:bg-indigo-700 shadow-md shadow-indigo-100"
-                  >
-                    Move Task
-                  </button>
-                </div>
+                <button 
+                  onClick={() => { if(moveDate) onMoveTask(task.id, moveDate, moveReason); setMovingTaskId(null); }}
+                  disabled={!moveDate}
+                  className="mt-3 w-full bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest py-2 rounded-lg disabled:opacity-30 transition-all shadow-md shadow-indigo-200"
+                >
+                  Update Timeline
+                </button>
               </div>
             )}
           </div>
