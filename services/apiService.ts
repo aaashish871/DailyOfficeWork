@@ -84,8 +84,12 @@ export const apiService = {
   },
 
   fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[] }> => {
-    const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    const { data: teamData } = await supabase.from('team_members').select('name').eq('user_id', userId);
+    const { data: tasksData, error: tasksError } = await supabase.from('tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    if (tasksError) console.error("Error fetching tasks:", tasksError);
+    
+    const { data: teamData, error: teamError } = await supabase.from('team_members').select('name').eq('user_id', userId);
+    if (teamError) console.error("Error fetching team:", teamError);
+
     return {
       tasks: (tasksData || []).map(mapDbTaskToTask),
       team: teamData?.map(t => t.name) || ['Self']
@@ -93,13 +97,22 @@ export const apiService = {
   },
 
   syncWorkspace: async (userId: string, tasks: Task[], team: string[]): Promise<void> => {
-    await apiService.syncTeam(userId, team);
-    // Use Promise.all for faster concurrent syncing
-    await Promise.all(tasks.map(task => apiService.syncTask(userId, task)));
+    try {
+      await apiService.syncTeam(userId, team);
+      // Syncing all tasks concurrently
+      const results = await Promise.allSettled(tasks.map(task => apiService.syncTask(userId, task)));
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        throw new Error(`${failures.length} tasks failed to sync. Check console for details.`);
+      }
+    } catch (e) {
+      console.error("Workspace sync failed:", e);
+      throw e;
+    }
   },
 
   syncTask: async (userId: string, task: Task): Promise<void> => {
-    const { error } = await supabase.from('tasks').upsert({
+    const payload = {
       id: task.id,
       user_id: userId,
       title: task.title,
@@ -114,23 +127,37 @@ export const apiService = {
       duration: task.duration,
       completed_at: task.completedAt ? new Date(task.completedAt).toISOString() : null,
       created_at: new Date(task.createdAt).toISOString()
-    });
-    if (error) console.error("Sync Task Error", error);
+    };
+
+    const { error } = await supabase.from('tasks').upsert(payload);
+    
+    if (error) {
+      console.error(`Sync Task Error [ID: ${task.id}]:`, error.message, error.details, error.hint);
+      // If error message contains "column does not exist", inform the user
+      if (error.message?.includes("column")) {
+        console.warn("DATABASE SCHEMA MISMATCH: It seems your Supabase table is missing columns. Please run the SQL setup script.");
+      }
+      throw error;
+    }
   },
 
   deleteTask: async (userId: string, taskId: string): Promise<void> => {
     const { error } = await supabase.from('tasks').delete().eq('id', taskId).eq('user_id', userId);
     if (error) {
-      console.error("Delete Task Error", error);
+      console.error("Delete Task Error:", error);
       throw error;
     }
   },
 
   syncTeam: async (userId: string, names: string[]): Promise<void> => {
-    await supabase.from('team_members').delete().eq('user_id', userId);
+    // Delete existing and re-insert for simple sync
+    const { error: delError } = await supabase.from('team_members').delete().eq('user_id', userId);
+    if (delError) console.error("Team Sync (Delete) Error:", delError);
+
     if (names.length > 0) {
       const inserts = names.map(n => ({ user_id: userId, name: n }));
-      await supabase.from('team_members').insert(inserts);
+      const { error: insError } = await supabase.from('team_members').insert(inserts);
+      if (insError) console.error("Team Sync (Insert) Error:", insError);
     }
   },
 

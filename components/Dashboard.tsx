@@ -19,7 +19,6 @@ export const formatAppDate = (dateStr: string) => {
   return `${day}-${months[mIdx]}-${year}`;
 };
 
-// Robust ID generation for diverse environments
 const generateId = () => {
   try {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -36,7 +35,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [activeTab, setActiveTab] = useState<'tasks' | 'team' | 'overview' | 'summary'>('tasks');
   
   const [editingMember, setEditingMember] = useState<string | null>(null);
@@ -53,13 +52,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
   const syncToServer = useCallback(async (tasks: Task[], team: string[]) => {
     if (user.isGuest) return;
-    setIsSyncing(true);
+    setSyncStatus('syncing');
     try {
       await apiService.syncWorkspace(user.id, tasks, team);
+      setSyncStatus('synced');
+      // Set back to idle after 3 seconds
+      setTimeout(() => setSyncStatus(prev => prev === 'synced' ? 'idle' : prev), 3000);
     } catch (e) {
       console.error("Cloud Sync Failed", e);
-    } finally {
-      setIsSyncing(false);
+      setSyncStatus('error');
     }
   }, [user.id, user.isGuest]);
 
@@ -102,16 +103,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
   const deleteTask = async (id: string) => {
     if (window.confirm("Permanently remove this task from the server?")) {
-       // Optimistic Update: Remove from UI immediately
        setAllTasks(prev => prev.filter(t => t.id !== id));
-       
-       // Server Delete
        if (!user.isGuest) {
          try {
            await apiService.deleteTask(user.id, id);
          } catch (e) {
-           alert("Failed to delete from server. Please check your connection.");
-           // Re-fetch to restore if critical, or let user retry
+           alert("Failed to delete from server. Check console for database errors.");
          }
        }
     }
@@ -178,12 +175,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                 </div>
              </div>
            )}
-           {isSyncing && (
-             <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100 animate-pulse">
-                <i className="fa-solid fa-cloud-arrow-up text-[10px]"></i>
-                <span className="text-[10px] font-black uppercase tracking-widest">Saving...</span>
-             </div>
-           )}
+           
+           <div className="min-w-[100px] flex justify-center">
+             {syncStatus === 'syncing' && (
+               <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100 animate-pulse">
+                  <i className="fa-solid fa-cloud-arrow-up text-[10px]"></i>
+                  <span className="text-[10px] font-black uppercase tracking-widest">Saving...</span>
+               </div>
+             )}
+             {syncStatus === 'synced' && (
+               <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
+                  <i className="fa-solid fa-circle-check text-[10px]"></i>
+                  <span className="text-[10px] font-black uppercase tracking-widest">Saved</span>
+               </div>
+             )}
+             {syncStatus === 'error' && (
+               <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 text-red-600 rounded-full border border-red-100">
+                  <i className="fa-solid fa-triangle-exclamation text-[10px]"></i>
+                  <span className="text-[10px] font-black uppercase tracking-widest">Sync Error</span>
+               </div>
+             )}
+           </div>
+
            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-sm border border-slate-200 p-2 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"/>
         </div>
       </div>
