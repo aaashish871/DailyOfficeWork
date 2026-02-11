@@ -120,7 +120,7 @@ const TaskList: React.FC<TaskListProps> = ({
                         <input
                           ref={durationInputRef}
                           type="number"
-                          step="0.25"
+                          step="any"
                           min="0"
                           value={tempDuration}
                           onChange={(e) => setTempDuration(e.target.value)}
@@ -129,7 +129,7 @@ const TaskList: React.FC<TaskListProps> = ({
                             if (e.key === 'Enter') saveDuration(task.id);
                             if (e.key === 'Escape') setEditingDurationId(null);
                           }}
-                          className="bg-transparent text-white text-[10px] font-black w-10 outline-none text-center px-1"
+                          className="bg-transparent text-white text-[10px] font-black w-12 outline-none text-center px-1"
                         />
                         <span className="text-[10px] font-black text-indigo-400 pr-1.5">H</span>
                       </div>
