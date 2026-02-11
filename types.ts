@@ -33,7 +33,7 @@ export interface Task {
   logDate: string;  
   blocker?: string; 
   postponedReason?: string; 
-  duration?: number; // Added: hours spent or estimated
+  duration?: number;
 }
 
 export interface DailyLog {

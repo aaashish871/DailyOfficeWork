@@ -5,14 +5,15 @@ import { TaskStatus, TaskPriority, Task } from '../types';
 interface TaskFormProps {
   onAdd: (task: Omit<Task, 'id' | 'createdAt' | 'logDate'>) => void;
   teamMembers: string[];
+  categories: string[];
   defaultStatus?: TaskStatus;
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, defaultStatus = TaskStatus.DONE }) => {
+const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, categories, defaultStatus = TaskStatus.DONE }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.MEDIUM);
-  const [category, setCategory] = useState('Development');
+  const [category, setCategory] = useState(categories[0] || 'Meeting');
   const [blocker, setBlocker] = useState('Self');
   const [duration, setDuration] = useState<string>('');
 
@@ -21,6 +22,13 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, defaultStatus =
       setBlocker(teamMembers.includes('Self') ? 'Self' : (teamMembers[0] || ''));
     }
   }, [teamMembers]);
+
+  useEffect(() => {
+    // If current category is no longer in the list, reset to first available
+    if (!categories.includes(category)) {
+      setCategory(categories[0] || 'Meeting');
+    }
+  }, [categories]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,20 +52,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, defaultStatus =
   };
 
   const isPlanner = defaultStatus !== TaskStatus.DONE;
-
-  const categories = [
-    'Meeting',
-    'Development',
-    'Bug Fix',
-    'Testing',
-    'Documentation',
-    'Research',
-    'Planning',
-    'Support',
-    'Admin',
-    'Brainstorming',
-    'Other'
-  ];
 
   return (
     <form onSubmit={handleSubmit} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 transition-all hover:border-indigo-100 group">
