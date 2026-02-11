@@ -93,15 +93,15 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
             <i className="fa-solid fa-clock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
             <input
               type="number"
-              step="0.5"
+              step="0.25"
               min="0"
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
-              placeholder="e.g. 1.5"
+              placeholder="e.g. 1.25"
               className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white placeholder:text-slate-300"
             />
           </div>
-          <p className="text-[9px] text-slate-400 font-bold uppercase">Actual time or estimate</p>
+          <p className="text-[9px] text-slate-400 font-bold uppercase">Actual time or estimate (Min increment 0.25h)</p>
         </div>
 
         <div className="space-y-2">

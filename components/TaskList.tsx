@@ -120,7 +120,7 @@ const TaskList: React.FC<TaskListProps> = ({
                         <input
                           ref={durationInputRef}
                           type="number"
-                          step="0.5"
+                          step="0.25"
                           min="0"
                           value={tempDuration}
                           onChange={(e) => setTempDuration(e.target.value)}
