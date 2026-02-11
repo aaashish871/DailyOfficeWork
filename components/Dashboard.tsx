@@ -5,7 +5,6 @@ import TaskForm from './TaskForm';
 import TaskList from './TaskList';
 import { generateDailySummary } from '../services/geminiService';
 import { apiService } from '../services/apiService';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface DashboardProps {
   user: User;
@@ -29,7 +28,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState<'tasks' | 'team' | 'overview' | 'stats' | 'summary'>('tasks');
-  const [feedback, setFeedback] = useState<string | null>(null);
+  
+  // States for renaming
+  const [editingMember, setEditingMember] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // Initial Data Pull (Silent)
   useEffect(() => {
@@ -94,6 +96,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
       setTeamMembers(prev => [...prev, name]);
       setNewMemberName('');
     }
+  };
+
+  const handleRenameMember = (oldName: string) => {
+    const newName = renameValue.trim();
+    if (!newName || newName === oldName) {
+      setEditingMember(null);
+      return;
+    }
+
+    if (teamMembers.includes(newName)) {
+      alert("A team member with this name already exists.");
+      return;
+    }
+
+    // Update Team List
+    setTeamMembers(prev => prev.map(m => m === oldName ? newName : m));
+    
+    // Update all tasks assigned to this person (Cascade Update)
+    setAllTasks(prev => prev.map(t => t.blocker === oldName ? { ...t, blocker: newName } : t));
+    
+    setEditingMember(null);
+    setRenameValue('');
   };
 
   const handleGenerateSummary = async () => {
@@ -175,7 +199,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
               <h2 className="text-2xl font-black text-slate-800 mb-2 flex items-center gap-3">
                 <i className="fa-solid fa-users text-indigo-600"></i> Team Members
               </h2>
-              <p className="text-slate-400 text-sm mb-8">Manage users you can assign tasks or blockers to.</p>
+              <p className="text-slate-400 text-sm mb-8">Manage users you can assign tasks or blockers to. Renaming a member updates all their assigned tasks.</p>
               
               <form onSubmit={addTeamMember} className="flex gap-2 mb-10">
                 <input 
@@ -188,20 +212,68 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                 <button type="submit" className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-slate-800 transition-all">Add</button>
               </form>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 {teamMembers.map(m => (
                   <div key={m} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl group hover:border-indigo-200 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center font-black text-indigo-600 shadow-sm">{m.charAt(0)}</div>
-                      <span className="font-bold text-slate-700">{m}</span>
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center font-black text-indigo-600 shadow-sm shrink-0">
+                        {m.charAt(0).toUpperCase()}
+                      </div>
+                      
+                      {editingMember === m ? (
+                        <div className="flex items-center gap-2 flex-1 animate-in fade-in slide-in-from-left-2 duration-200">
+                          <input 
+                            autoFocus
+                            type="text"
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleRenameMember(m);
+                              if (e.key === 'Escape') setEditingMember(null);
+                            }}
+                            className="flex-1 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                          <button 
+                            onClick={() => handleRenameMember(m)}
+                            className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                          >
+                            <i className="fa-solid fa-check"></i>
+                          </button>
+                          <button 
+                            onClick={() => setEditingMember(null)}
+                            className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            <i className="fa-solid fa-xmark"></i>
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="font-bold text-slate-700 truncate">{m}</span>
+                      )}
                     </div>
-                    {m !== 'Self' && (
-                      <button 
-                        onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))}
-                        className="text-slate-300 hover:text-red-500 transition-colors"
-                      >
-                        <i className="fa-solid fa-circle-xmark"></i>
-                      </button>
+                    
+                    {!editingMember && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => { setEditingMember(m); setRenameValue(m); }}
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          title="Rename member"
+                        >
+                          <i className="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        {m !== 'Self' && (
+                          <button 
+                            onClick={() => {
+                              if(window.confirm(`Delete ${m}? Tasks assigned to them will stay but they'll be marked as 'Former'.`)) {
+                                setTeamMembers(prev => prev.filter(x => x !== m));
+                              }
+                            }}
+                            className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete member"
+                          >
+                            <i className="fa-solid fa-trash-can text-sm"></i>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}

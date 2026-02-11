@@ -70,7 +70,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   if (verificationSent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-4">
         <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-10 text-center animate-in zoom-in-95 duration-300">
           <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <i className="fa-solid fa-envelope-circle-check text-3xl"></i>
@@ -94,15 +94,22 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           >
             Back to Sign In
           </button>
+          
+          <div className="mt-10 flex flex-col items-center gap-2 pt-8 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Idea developed by</span>
+            <span className="text-[11px] font-black text-indigo-600 uppercase tracking-widest px-3 py-1.5 bg-indigo-50 rounded-xl">
+              Ashish Ahuja
+            </span>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-4 py-12">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-white/10">
-        <div className="p-10">
+        <div className="p-8 sm:p-10">
           <div className="text-center mb-10">
             <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 text-white rounded-2xl mb-4 shadow-xl">
               <i className="fa-solid fa-shield-halved text-3xl"></i>
@@ -199,10 +206,21 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             </button>
           </form>
 
-          <p className="mt-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-            Secured Enterprise Access<br/>
-            Syncs automatically across all devices
-          </p>
+          <div className="mt-10 flex flex-col items-center gap-4 pt-10 border-t border-slate-50">
+            <div className="text-center">
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed mb-3">
+                Secured Enterprise Access<br/>
+                Syncs automatically across all devices
+              </p>
+            </div>
+            
+            <div className="flex flex-col items-center gap-1 group">
+              <span className="text-[9px] font-bold text-slate-300 uppercase tracking-[0.2em]">Idea developed by</span>
+              <span className="text-[11px] font-black text-indigo-600 uppercase tracking-widest px-4 py-2 bg-indigo-50 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
+                Ashish Ahuja
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
