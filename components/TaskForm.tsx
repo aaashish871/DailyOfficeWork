@@ -17,6 +17,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
   const [category, setCategory] = useState(categories[0] || 'Meeting');
   const [blocker, setBlocker] = useState('Self');
   const [duration, setDuration] = useState<string>('');
+  const [unit, setUnit] = useState<'hrs' | 'mins'>('hrs');
 
   useEffect(() => {
     if (!teamMembers.includes(blocker)) {
@@ -34,6 +35,11 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
     e.preventDefault();
     if (!title.trim()) return;
 
+    const numValue = duration ? parseFloat(duration) : undefined;
+    const durationInHours = (numValue !== undefined && unit === 'mins') 
+      ? Number((numValue / 60).toFixed(2)) 
+      : numValue;
+
     onAdd({
       title,
       description,
@@ -41,7 +47,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
       priority,
       category,
       blocker: blocker || undefined,
-      duration: duration ? parseFloat(duration) : undefined,
+      duration: durationInHours,
     });
 
     setTitle('');
@@ -49,6 +55,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
     setPriority(TaskPriority.MEDIUM);
     setDuration('');
     setBlocker(teamMembers.includes('Self') ? 'Self' : (teamMembers[0] || ''));
+    setUnit('hrs'); // Reset to default
   };
 
   const isPlanner = defaultStatus !== TaskStatus.DONE;
@@ -81,8 +88,8 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
         </div>
         
         <div className="space-y-2">
-          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Estimated Hours</label>
-          <div className="relative">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Time Investment</label>
+          <div className="relative group/time">
             <i className="fa-solid fa-clock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
             <input
               type="number"
@@ -91,8 +98,24 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
               placeholder="e.g. 1.5"
-              className="w-full pl-10 pr-4 py-3.5 rounded-2xl bg-slate-50 border border-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none font-black text-slate-700"
+              className="w-full pl-10 pr-20 py-3.5 rounded-2xl bg-slate-50 border border-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none font-black text-slate-700 transition-all"
             />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 bg-slate-200/50 p-0.5 rounded-lg border border-slate-200 shadow-inner">
+               <button 
+                type="button" 
+                onClick={() => setUnit('hrs')} 
+                className={`text-[7px] font-black uppercase px-2 py-1 rounded-md transition-all ${unit === 'hrs' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+               >
+                 Hrs
+               </button>
+               <button 
+                type="button" 
+                onClick={() => setUnit('mins')} 
+                className={`text-[7px] font-black uppercase px-2 py-1 rounded-md transition-all ${unit === 'mins' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+               >
+                 Min
+               </button>
+            </div>
           </div>
         </div>
 
