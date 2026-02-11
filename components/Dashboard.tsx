@@ -38,6 +38,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [newMemberName, setNewMemberName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
   
+  // States for renaming categories
+  const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  
   const [diaryDate, setDiaryDate] = useState<string>(todayStr);
   const [futureDate, setFutureDate] = useState<string>(() => {
     const tomorrow = new Date();
@@ -92,7 +96,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     setAllTasks(prev => [newTask, ...prev]);
   };
 
-  // Fixed: Wrapped updateTaskStatus in useCallback and implemented deleteTask, moveTask, and updateTaskDuration functions.
   const updateTaskStatus = useCallback((id: string, status: TaskStatus) => {
     setAllTasks(prev => prev.map(t => {
       if (t.id === id) {
@@ -139,6 +142,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     setCategories(prev => prev.filter(c => c !== name));
   };
 
+  const handleRenameCategory = (oldName: string) => {
+    const newName = renameValue.trim();
+    if (!newName || newName === oldName) {
+      setRenamingCategory(null);
+      return;
+    }
+    if (categories.includes(newName)) {
+      alert("This category name already exists.");
+      return;
+    }
+
+    // 1. Update the master category list
+    setCategories(prev => prev.map(c => c === oldName ? newName : c));
+    
+    // 2. Propagate changes to all existing tasks that used the old category name
+    setAllTasks(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
+    
+    setRenamingCategory(null);
+  };
+
   const addTeamMember = (e: React.FormEvent) => {
     e.preventDefault();
     const name = newMemberName.trim();
@@ -155,6 +178,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     setIsGenerating(false);
     setActiveTab('summary');
   };
+
+  const goToWorkspace = () => setActiveTab('team');
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -235,14 +260,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
       <div className="min-h-[600px]">
         {activeTab === 'diary' && (
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4">
-            <TaskForm onAdd={addTask} teamMembers={teamMembers} categories={categories} defaultStatus={TaskStatus.DONE} />
+            <TaskForm onAdd={addTask} onManageCategories={goToWorkspace} teamMembers={teamMembers} categories={categories} defaultStatus={TaskStatus.DONE} />
             <TaskList tasks={diaryTasks} teamMembers={teamMembers} onUpdateStatus={updateTaskStatus} onUpdateResponsible={()=>{}} onUpdateDuration={updateTaskDuration} onDelete={deleteTask} onMoveTask={moveTask} />
           </div>
         )}
 
         {activeTab === 'planner' && (
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4">
-            <TaskForm onAdd={addTask} teamMembers={teamMembers} categories={categories} defaultStatus={TaskStatus.TODO} />
+            <TaskForm onAdd={addTask} onManageCategories={goToWorkspace} teamMembers={teamMembers} categories={categories} defaultStatus={TaskStatus.TODO} />
             <TaskList tasks={todayPlannedTasks} teamMembers={teamMembers} onUpdateStatus={updateTaskStatus} onUpdateResponsible={()=>{}} onUpdateDuration={updateTaskDuration} onDelete={deleteTask} onMoveTask={moveTask} />
           </div>
         )}
@@ -256,7 +281,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                </div>
                <input type="date" value={futureDate} onChange={(e) => setFutureDate(e.target.value)} className="bg-white text-slate-900 px-5 py-2.5 rounded-xl text-xs font-black outline-none border-none shadow-xl" />
             </div>
-            <TaskForm onAdd={addTask} teamMembers={teamMembers} categories={categories} defaultStatus={TaskStatus.TODO} />
+            <TaskForm onAdd={addTask} onManageCategories={goToWorkspace} teamMembers={teamMembers} categories={categories} defaultStatus={TaskStatus.TODO} />
             <TaskList tasks={futurePlannedTasks} teamMembers={teamMembers} onUpdateStatus={updateTaskStatus} onUpdateResponsible={()=>{}} onUpdateDuration={updateTaskDuration} onDelete={deleteTask} onMoveTask={moveTask} />
           </div>
         )}
@@ -265,18 +290,55 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
           <div className="space-y-10 animate-in fade-in">
              {/* Category Management */}
              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
-               <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3">
+               <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-3">
                  <i className="fa-solid fa-tags text-indigo-600"></i> Category Management
                </h2>
+               <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-8 ml-9">Renaming a category will update all existing task tags automatically.</p>
+               
                <form onSubmit={addCategory} className="flex gap-4 mb-8">
-                 <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="New category name (e.g. Research)..." className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold" />
-                 <button type="submit" className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-100">Add Category</button>
+                 <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="New category name (e.g. Research)..." className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-indigo-500 transition-all" />
+                 <button type="submit" className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all">Add Category</button>
                </form>
-               <div className="flex flex-wrap gap-3">
+               
+               <div className="flex flex-wrap gap-4">
                  {categories.map(c => (
-                   <div key={c} className="flex items-center gap-3 px-5 py-3 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-700 group">
-                     {c}
-                     <button onClick={() => deleteCategory(c)} className="text-slate-300 hover:text-red-500 transition-colors"><i className="fa-solid fa-xmark"></i></button>
+                   <div key={c} className="flex items-center gap-3 px-6 py-4 bg-slate-50 border border-slate-100 rounded-[1.5rem] font-bold text-slate-700 group transition-all hover:bg-white hover:shadow-md hover:border-indigo-100">
+                     {renamingCategory === c ? (
+                       <div className="flex items-center gap-2">
+                          <input 
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onBlur={() => handleRenameCategory(c)}
+                            onKeyDown={(e) => { 
+                              if(e.key === 'Enter') handleRenameCategory(c); 
+                              if(e.key === 'Escape') setRenamingCategory(null); 
+                            }}
+                            className="bg-white border border-indigo-200 px-3 py-1.5 rounded-xl text-sm outline-none w-32 font-black shadow-inner"
+                          />
+                          <button onClick={() => handleRenameCategory(c)} className="text-emerald-500 hover:text-emerald-600"><i className="fa-solid fa-circle-check"></i></button>
+                       </div>
+                     ) : (
+                       <>
+                         <span className="text-sm font-black">{c}</span>
+                         <div className="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button 
+                             onClick={() => { setRenamingCategory(c); setRenameValue(c); }} 
+                             className="w-8 h-8 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center"
+                             title="Rename Category"
+                           >
+                             <i className="fa-solid fa-pen-to-square text-xs"></i>
+                           </button>
+                           <button 
+                             onClick={() => deleteCategory(c)} 
+                             className="w-8 h-8 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center"
+                             title="Delete Category"
+                           >
+                             <i className="fa-solid fa-trash-can text-xs"></i>
+                           </button>
+                         </div>
+                       </>
+                     )}
                    </div>
                  ))}
                </div>
@@ -288,14 +350,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                  <i className="fa-solid fa-user-group text-emerald-600"></i> Team Directory
                </h2>
                <form onSubmit={addTeamMember} className="flex gap-4 mb-8">
-                 <input type="text" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} placeholder="Collaborator name..." className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold" />
-                 <button type="submit" className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest">Add Member</button>
+                 <input type="text" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} placeholder="Collaborator name..." className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-indigo-500 transition-all" />
+                 <button type="submit" className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all">Add Member</button>
                </form>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {teamMembers.map(m => (
-                   <div key={m} className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                   <div key={m} className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:bg-white hover:shadow-sm">
                      <span className="font-black text-slate-700">{m}</span>
-                     {m !== 'Self' && <button onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))} className="text-slate-300 hover:text-red-500"><i className="fa-solid fa-trash-can"></i></button>}
+                     {m !== 'Self' && <button onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))} className="w-10 h-10 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-all"><i className="fa-solid fa-trash-can"></i></button>}
                    </div>
                  ))}
                </div>

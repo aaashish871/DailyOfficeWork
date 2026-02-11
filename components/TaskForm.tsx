@@ -4,12 +4,13 @@ import { TaskStatus, TaskPriority, Task } from '../types';
 
 interface TaskFormProps {
   onAdd: (task: Omit<Task, 'id' | 'createdAt' | 'logDate'>) => void;
+  onManageCategories?: () => void;
   teamMembers: string[];
   categories: string[];
   defaultStatus?: TaskStatus;
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, categories, defaultStatus = TaskStatus.DONE }) => {
+const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMembers, categories, defaultStatus = TaskStatus.DONE }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.MEDIUM);
@@ -24,7 +25,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, categories, def
   }, [teamMembers]);
 
   useEffect(() => {
-    // If current category is no longer in the list, reset to first available
     if (!categories.includes(category)) {
       setCategory(categories[0] || 'Meeting');
     }
@@ -110,7 +110,18 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers, categories, def
         </div>
 
         <div className="space-y-2">
-          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Select Category</label>
+          <div className="flex justify-between items-center ml-1">
+            <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Select Category</label>
+            {onManageCategories && (
+              <button 
+                type="button" 
+                onClick={onManageCategories}
+                className="text-[8px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-700 transition-colors"
+              >
+                <i className="fa-solid fa-gear mr-1"></i> Manage
+              </button>
+            )}
+          </div>
           <select 
             value={category}
             onChange={(e) => setCategory(e.target.value)}
