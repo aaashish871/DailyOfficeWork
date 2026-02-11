@@ -29,14 +29,24 @@ const generateId = () => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
+  const todayStr = new Date().toISOString().split('T')[0];
+  
   const [allTasks, setAllTasks] = useState<Task[]>(initialData?.tasks || []);
   const [teamMembers, setTeamMembers] = useState<string[]>(initialData?.team || ['Self']);
   const [newMemberName, setNewMemberName] = useState('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  
+  // States for different tab views
+  const [diaryDate, setDiaryDate] = useState<string>(todayStr);
+  const [futureDate, setFutureDate] = useState<string>(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  });
+  
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
-  const [activeTab, setActiveTab] = useState<'diary' | 'planner' | 'team' | 'overview' | 'summary'>('diary');
+  const [activeTab, setActiveTab] = useState<'diary' | 'planner' | 'future' | 'team' | 'overview' | 'summary'>('diary');
   
   const [editingMember, setEditingMember] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -58,7 +68,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus(prev => prev === 'synced' ? 'idle' : prev), 3000);
     } catch (e) {
-      console.error("Cloud Sync Failed", e);
       setSyncStatus('error');
     }
   }, [user.id, user.isGuest]);
@@ -70,22 +79,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     return () => clearTimeout(timeout);
   }, [allTasks, teamMembers, syncToServer]);
 
-  // Diary tasks: DONE tasks for specific date
+  // Logic for different tabs
   const diaryTasks = useMemo(() => {
-    return allTasks.filter(t => t.logDate === selectedDate && t.status === TaskStatus.DONE);
-  }, [allTasks, selectedDate]);
+    return allTasks.filter(t => t.logDate === diaryDate && t.status === TaskStatus.DONE);
+  }, [allTasks, diaryDate]);
 
-  // Planner tasks: All TODO or IN_PROGRESS tasks
-  const plannedTasks = useMemo(() => {
-    return allTasks.filter(t => t.status !== TaskStatus.DONE);
-  }, [allTasks]);
+  const todayPlannedTasks = useMemo(() => {
+    return allTasks.filter(t => t.logDate === todayStr && t.status !== TaskStatus.DONE);
+  }, [allTasks, todayStr]);
 
-  const totalHoursToday = useMemo(() => {
+  const futurePlannedTasks = useMemo(() => {
+    return allTasks.filter(t => t.logDate === futureDate && t.status !== TaskStatus.DONE);
+  }, [allTasks, futureDate]);
+
+  const totalHoursLogged = useMemo(() => {
     return diaryTasks.reduce((acc, t) => acc + (t.duration || 0), 0);
   }, [diaryTasks]);
 
   const addTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'logDate'>) => {
-    const targetDate = taskData.dueDate || selectedDate;
+    let targetDate = todayStr;
+    if (activeTab === 'diary') targetDate = diaryDate;
+    if (activeTab === 'future') targetDate = futureDate;
+    
     const newTask: Task = { ...taskData, id: generateId(), createdAt: Date.now(), logDate: targetDate };
     setAllTasks(prev => [newTask, ...prev]);
   };
@@ -97,8 +112,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
         return { 
           ...t, 
           status, 
-          // If marked done, move it to "today" log
-          logDate: isNowDone ? new Date().toISOString().split('T')[0] : t.logDate,
+          // If task is finished today, log it for today
+          logDate: isNowDone ? todayStr : t.logDate,
           completedAt: isNowDone ? Date.now() : undefined 
         };
       }
@@ -119,15 +134,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   };
 
   const deleteTask = async (id: string) => {
-    if (window.confirm("Permanently remove this entry?")) {
+    if (window.confirm("Delete this entry?")) {
        setAllTasks(prev => prev.filter(t => t.id !== id));
-       if (!user.isGuest) {
-         try {
-           await apiService.deleteTask(user.id, id);
-         } catch (e) {
-           alert("Failed to delete from server.");
-         }
-       }
+       if (!user.isGuest) apiService.deleteTask(user.id, id).catch(() => {});
     }
   };
 
@@ -140,22 +149,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     }
   };
 
-  const handleRenameMember = (oldName: string) => {
-    const newName = renameValue.trim();
-    if (!newName || newName === oldName) {
-      setEditingMember(null);
-      return;
-    }
-    if (teamMembers.includes(newName)) {
-      alert("Name already exists.");
-      return;
-    }
-    setTeamMembers(prev => prev.map(m => m === oldName ? newName : m));
-    setAllTasks(prev => prev.map(t => t.blocker === oldName ? { ...t, blocker: newName } : t));
-    setEditingMember(null);
-    setRenameValue('');
-  };
-
   const handleGenerateSummary = async () => {
     setIsGenerating(true);
     const summary = await generateDailySummary(diaryTasks);
@@ -166,217 +159,181 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* Dynamic Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-        <div className="flex items-center gap-6">
-          {activeTab === 'diary' ? (
-            <div className="flex items-center bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white hover:shadow-sm rounded-xl text-slate-500 transition-all"><i className="fa-solid fa-chevron-left"></i></button>
-              <div className="px-6 text-center">
-                <span className="block text-[10px] font-black uppercase text-indigo-500 tracking-widest leading-none mb-1">Work Diary</span>
-                <span className="text-sm font-black text-slate-800">{formatAppDate(selectedDate)}</span>
-              </div>
-              <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()+1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white hover:shadow-sm rounded-xl text-slate-500 transition-all"><i className="fa-solid fa-chevron-right"></i></button>
-            </div>
-          ) : (
-            <div className="px-4">
-              <h1 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-                 <i className={`fa-solid ${activeTab === 'planner' ? 'fa-calendar-check text-indigo-600' : 'fa-users-viewfinder text-slate-400'}`}></i>
-                 {activeTab === 'planner' ? 'My Planner' : activeTab === 'team' ? 'Collaborators' : 'Work Analysis'}
-              </h1>
-            </div>
-          )}
-        </div>
-        
+      {/* Dynamic Tab Header */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
         <div className="flex items-center gap-4">
-           {totalHoursToday > 0 && activeTab === 'diary' && (
-             <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-900 text-white rounded-2xl shadow-xl shadow-slate-200">
-                <i className="fa-solid fa-fire-flame-curved text-amber-400"></i>
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black uppercase tracking-widest leading-none text-slate-400">Day Total</span>
-                  <span className="text-sm font-black tracking-tight">{totalHoursToday}h Logged</span>
+          <div className="flex items-center bg-slate-50 p-1 rounded-2xl border border-slate-100">
+            {activeTab === 'diary' && (
+              <>
+                <button onClick={() => { const d = new Date(diaryDate); d.setDate(d.getDate()-1); setDiaryDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white rounded-xl text-slate-400 transition-all"><i className="fa-solid fa-chevron-left"></i></button>
+                <div className="px-5 text-center min-w-[140px]">
+                  <span className="block text-[9px] font-black uppercase text-indigo-500 tracking-widest mb-0.5">Work Diary</span>
+                  <span className="text-sm font-black text-slate-800">{formatAppDate(diaryDate)}</span>
                 </div>
-             </div>
-           )}
+                <button onClick={() => { const d = new Date(diaryDate); d.setDate(d.getDate()+1); setDiaryDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white rounded-xl text-slate-400 transition-all"><i className="fa-solid fa-chevron-right"></i></button>
+              </>
+            )}
+            {activeTab === 'planner' && (
+              <div className="px-6 py-2 flex items-center gap-3">
+                <i className="fa-solid fa-bolt-lightning text-amber-500"></i>
+                <div className="text-left">
+                  <span className="block text-[9px] font-black uppercase text-amber-600 tracking-widest mb-0.5">Today's Goals</span>
+                  <span className="text-sm font-black text-slate-800">{formatAppDate(todayStr)}</span>
+                </div>
+              </div>
+            )}
+            {activeTab === 'future' && (
+              <>
+                <button onClick={() => { const d = new Date(futureDate); d.setDate(d.getDate()-1); setFutureDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white rounded-xl text-slate-400 transition-all"><i className="fa-solid fa-chevron-left"></i></button>
+                <div className="px-5 text-center min-w-[140px]">
+                  <span className="block text-[9px] font-black uppercase text-indigo-500 tracking-widest mb-0.5">Roadmap View</span>
+                  <span className="text-sm font-black text-slate-800">{formatAppDate(futureDate)}</span>
+                </div>
+                <button onClick={() => { const d = new Date(futureDate); d.setDate(d.getDate()+1); setFutureDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white rounded-xl text-slate-400 transition-all"><i className="fa-solid fa-chevron-right"></i></button>
+              </>
+            )}
+            {(activeTab === 'team' || activeTab === 'overview' || activeTab === 'summary') && (
+              <div className="px-10 py-2">
+                 <span className="text-xs font-black uppercase text-slate-500 tracking-widest">Management View</span>
+              </div>
+            )}
+          </div>
+        </div>
 
-           {plannedTasks.length > 0 && activeTab === 'planner' && (
-             <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-100">
-                <i className="fa-solid fa-hourglass-start"></i>
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black uppercase tracking-widest leading-none text-indigo-200">Pending</span>
-                  <span className="text-sm font-black tracking-tight">{plannedTasks.length} Planned</span>
-                </div>
+        <div className="flex items-center gap-4">
+           {activeTab === 'diary' && totalHoursLogged > 0 && (
+             <div className="flex items-center gap-3 px-4 py-2 bg-slate-900 text-white rounded-xl">
+               <span className="text-xs font-black">{totalHoursLogged}h Done</span>
              </div>
            )}
-           
-           <div className="min-w-[100px] flex justify-center">
-             {syncStatus === 'syncing' && <span className="text-[10px] font-black uppercase text-indigo-500 animate-pulse"><i className="fa-solid fa-cloud-arrow-up mr-2"></i>Syncing</span>}
-             {syncStatus === 'synced' && <span className="text-[10px] font-black uppercase text-emerald-500"><i className="fa-solid fa-check mr-2"></i>Synced</span>}
-             {syncStatus === 'error' && <span className="text-[10px] font-black uppercase text-red-500"><i className="fa-solid fa-triangle-exclamation mr-2"></i>Offline</span>}
+           {activeTab === 'planner' && todayPlannedTasks.length > 0 && (
+             <div className="flex items-center gap-3 px-4 py-2 bg-amber-500 text-white rounded-xl">
+               <span className="text-xs font-black">{todayPlannedTasks.length} Pending</span>
+             </div>
+           )}
+           <div className="flex items-center gap-2">
+              {activeTab === 'diary' && <input type="date" value={diaryDate} onChange={(e) => setDiaryDate(e.target.value)} className="text-[10px] border border-slate-200 p-2 rounded-lg font-black text-slate-500"/>}
+              {activeTab === 'future' && <input type="date" value={futureDate} onChange={(e) => setFutureDate(e.target.value)} className="text-[10px] border border-slate-200 p-2 rounded-lg font-black text-slate-500"/>}
            </div>
-
-           {activeTab === 'diary' && (
-             <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-sm border border-slate-200 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-600"/>
-           )}
+           {syncStatus === 'syncing' && <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></div>}
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex border-b border-slate-200 mb-8 gap-8 overflow-x-auto no-scrollbar">
+      {/* Main Tabs Navigation */}
+      <div className="flex border-b border-slate-200 mb-10 gap-8 overflow-x-auto no-scrollbar">
         {[
           { id: 'diary', label: 'Work Diary', icon: 'fa-book-open' },
-          { id: 'planner', label: 'My Planner', icon: 'fa-calendar-check' },
-          { id: 'team', label: 'Collaborators', icon: 'fa-users-viewfinder' },
-          { id: 'overview', label: 'Stats', icon: 'fa-chart-simple' },
+          { id: 'planner', label: 'Today\'s Plan', icon: 'fa-bolt-lightning' },
+          { id: 'future', label: 'Future Tasks', icon: 'fa-calendar-days' },
+          { id: 'team', label: 'Team', icon: 'fa-users' },
+          { id: 'overview', label: 'Stats', icon: 'fa-chart-line' },
           { id: 'summary', label: 'AI Review', icon: 'fa-wand-magic-sparkles' }
         ].map(tab => (
           <button 
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`pb-4 text-[11px] font-black uppercase tracking-widest transition-all relative flex items-center gap-2 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`pb-4 text-[10px] font-black uppercase tracking-[0.15em] transition-all relative flex items-center gap-2.5 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <i className={`fa-solid ${tab.icon}`}></i>
+            <i className={`fa-solid ${tab.icon} text-xs`}></i>
             {tab.label}
             {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-600 rounded-t-full"></div>}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
       <div className="min-h-[500px]">
         {activeTab === 'diary' && (
-          <div className="space-y-10">
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2">
             <TaskForm onAdd={addTask} teamMembers={teamMembers} defaultStatus={TaskStatus.DONE} />
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <span className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em]">Work Accomplished</span>
-                <div className="h-0.5 flex-1 bg-slate-100"></div>
-              </div>
-              <TaskList 
-                tasks={diaryTasks} 
-                teamMembers={teamMembers} 
-                onUpdateStatus={updateTaskStatus} 
-                onUpdateResponsible={updateTaskResponsible} 
-                onUpdateDuration={updateTaskDuration}
-                onDelete={deleteTask} 
-                onMoveTask={moveTask} 
-              />
+            <div className="relative">
+               <div className="flex items-center gap-4 mb-6">
+                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Daily Log</h3>
+                 <div className="h-px flex-1 bg-slate-100"></div>
+               </div>
+               <TaskList tasks={diaryTasks} teamMembers={teamMembers} onUpdateStatus={updateTaskStatus} onUpdateResponsible={updateTaskResponsible} onUpdateDuration={updateTaskDuration} onDelete={deleteTask} onMoveTask={moveTask} />
             </div>
           </div>
         )}
 
         {activeTab === 'planner' && (
-          <div className="space-y-10">
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2">
             <TaskForm onAdd={addTask} teamMembers={teamMembers} defaultStatus={TaskStatus.TODO} />
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <span className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em]">Future Plans</span>
-                <div className="h-0.5 flex-1 bg-slate-100"></div>
-              </div>
-              <TaskList 
-                tasks={plannedTasks} 
-                teamMembers={teamMembers} 
-                onUpdateStatus={updateTaskStatus} 
-                onUpdateResponsible={updateTaskResponsible} 
-                onUpdateDuration={updateTaskDuration}
-                onDelete={deleteTask} 
-                onMoveTask={moveTask} 
-              />
+            <div className="relative">
+               <div className="flex items-center gap-4 mb-6">
+                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-400">Today's Agenda</h3>
+                 <div className="h-px flex-1 bg-slate-100"></div>
+               </div>
+               <TaskList tasks={todayPlannedTasks} teamMembers={teamMembers} onUpdateStatus={updateTaskStatus} onUpdateResponsible={updateTaskResponsible} onUpdateDuration={updateTaskDuration} onDelete={deleteTask} onMoveTask={moveTask} />
             </div>
           </div>
         )}
 
-        {/* ... Rest of tabs (Team, Overview, Summary) ... */}
-        {activeTab === 'team' && (
-          <div className="bg-white p-12 rounded-[2.5rem] shadow-sm border border-slate-200">
-            <div className="max-w-xl mx-auto">
-              <h2 className="text-2xl font-black text-slate-800 mb-2">Collaborators</h2>
-              <p className="text-slate-400 text-sm mb-10">People you interact with during tasks.</p>
-              
-              <form onSubmit={addTeamMember} className="flex gap-3 mb-12">
-                <input 
-                  type="text" 
-                  value={newMemberName} 
-                  onChange={(e) => setNewMemberName(e.target.value)} 
-                  placeholder="Person's name..." 
-                  className="flex-1 px-6 py-4 rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
-                />
-                <button type="submit" className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs">Add</button>
-              </form>
-
-              <div className="grid grid-cols-1 gap-4">
-                {teamMembers.map(m => (
-                  <div key={m} className="flex items-center justify-between p-5 bg-slate-50/50 border border-slate-100 rounded-[1.5rem] group hover:bg-white transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center font-black text-indigo-600 shadow-sm">
-                        {m.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="font-black text-slate-700">{m}</span>
-                    </div>
-                    {m !== 'Self' && (
-                      <button onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))} className="p-2.5 text-slate-300 hover:text-red-500 transition-all">
-                        <i className="fa-solid fa-trash-can"></i>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+        {activeTab === 'future' && (
+          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2">
+            <TaskForm onAdd={addTask} teamMembers={teamMembers} defaultStatus={TaskStatus.TODO} />
+            <div className="relative">
+               <div className="flex items-center gap-4 mb-6">
+                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">Upcoming Schedule</h3>
+                 <div className="h-px flex-1 bg-slate-100"></div>
+               </div>
+               <TaskList tasks={futurePlannedTasks} teamMembers={teamMembers} onUpdateStatus={updateTaskStatus} onUpdateResponsible={updateTaskResponsible} onUpdateDuration={updateTaskDuration} onDelete={deleteTask} onMoveTask={moveTask} />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'team' && (
+          <div className="bg-white p-10 rounded-3xl border border-slate-200 animate-in fade-in">
+             <div className="max-w-xl mx-auto">
+               <h2 className="text-xl font-black text-slate-800 mb-8">Work Collaborators</h2>
+               <form onSubmit={addTeamMember} className="flex gap-4 mb-10">
+                 <input type="text" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} placeholder="Member name..." className="flex-1 bg-slate-50 border border-slate-200 px-6 py-3 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold"/>
+                 <button type="submit" className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-100 transition-all hover:bg-indigo-600">Add</button>
+               </form>
+               <div className="grid gap-3">
+                 {teamMembers.map(m => (
+                   <div key={m} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group transition-all hover:bg-white hover:border-indigo-100">
+                     <div className="flex items-center gap-4">
+                       <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-black text-sm">{m.charAt(0).toUpperCase()}</div>
+                       <span className="font-bold text-slate-700">{m}</span>
+                     </div>
+                     {m !== 'Self' && <button onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))} className="p-2 text-slate-300 hover:text-red-500"><i className="fa-solid fa-trash-can"></i></button>}
+                   </div>
+                 ))}
+               </div>
+             </div>
           </div>
         )}
 
         {activeTab === 'overview' && (
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 text-center shadow-sm">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-4 block">Diary Logs Today</span>
-                <span className="text-4xl font-black text-slate-800">{diaryTasks.length}</span>
-              </div>
-              <div className="bg-indigo-600 p-8 rounded-[2rem] border border-indigo-500 text-center shadow-xl">
-                <span className="text-[10px] font-black uppercase text-indigo-200 tracking-widest mb-4 block">Pending Plans</span>
-                <span className="text-4xl font-black text-white">{plannedTasks.length}</span>
-              </div>
-              <div className="bg-slate-900 p-8 rounded-[2rem] border border-slate-800 text-center">
-                <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest mb-4 block">Today's Hours</span>
-                <span className="text-4xl font-black text-white">{totalHoursToday}h</span>
-              </div>
-            </div>
-            
-            <div className="bg-white p-12 rounded-[2.5rem] border border-slate-200 text-center">
-                <div className="max-w-md mx-auto">
-                  <h3 className="text-xl font-black text-slate-800 mb-4">Daily Report AI</h3>
-                  <p className="text-slate-500 text-sm mb-8">Generate a professional summary of your accomplished work.</p>
-                  <button 
-                    onClick={handleGenerateSummary}
-                    disabled={isGenerating || diaryTasks.length === 0}
-                    className="w-full bg-slate-900 text-white font-black uppercase tracking-widest text-[11px] px-10 py-5 rounded-2xl hover:bg-indigo-600 transition-all disabled:opacity-20"
-                  >
-                    {isGenerating ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Review Today\'s Accomplishments'}
-                  </button>
-                </div>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 animate-in fade-in">
+             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 text-center">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4">Total Finished Tasks</span>
+                <span className="text-5xl font-black text-slate-800">{allTasks.filter(t => t.status === TaskStatus.DONE).length}</span>
+             </div>
+             <div className="bg-indigo-600 p-10 rounded-[2.5rem] text-center shadow-xl shadow-indigo-100">
+                <span className="text-[10px] font-black uppercase text-indigo-200 tracking-widest block mb-4">Pending in Planner</span>
+                <span className="text-5xl font-black text-white">{allTasks.filter(t => t.status !== TaskStatus.DONE).length}</span>
+             </div>
+             <div className="bg-slate-900 p-10 rounded-[2.5rem] text-center">
+                <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest block mb-4">Hours Logged Today</span>
+                <span className="text-5xl font-black text-white">{totalHoursLogged}h</span>
+             </div>
           </div>
         )}
 
         {activeTab === 'summary' && (
-          <div className="bg-white p-12 rounded-[2.5rem] shadow-sm border border-slate-200 max-w-3xl mx-auto">
-            <div className="flex items-center justify-between mb-10">
-              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                <i className="fa-solid fa-robot text-indigo-600"></i> AI Intelligence Review
-              </h2>
-              <button onClick={() => { navigator.clipboard.writeText(aiSummary); alert("Copied!"); }} className="text-[10px] font-black uppercase text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100">
-                <i className="fa-solid fa-copy mr-2"></i> Copy
-              </button>
-            </div>
-            {aiSummary ? (
-              <div className="prose prose-slate max-w-none text-slate-600 border-l-4 border-indigo-100 pl-8 font-medium">
-                {aiSummary}
-              </div>
-            ) : (
-              <div className="text-center py-20 text-slate-300 font-black uppercase text-xs tracking-widest">
-                No report generated yet.
-              </div>
-            )}
+          <div className="bg-white p-12 rounded-[2.5rem] border border-slate-200 max-w-3xl mx-auto animate-in fade-in">
+             <div className="flex items-center justify-between mb-10">
+               <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3"><i className="fa-solid fa-sparkles text-indigo-600"></i> Smart Review</h2>
+               <button onClick={handleGenerateSummary} disabled={isGenerating || diaryTasks.length === 0} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-600 disabled:opacity-30">
+                 {isGenerating ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Generate Report'}
+               </button>
+             </div>
+             {aiSummary ? (
+               <div className="prose prose-slate max-w-none text-slate-600 border-l-4 border-indigo-100 pl-8 leading-relaxed font-medium">{aiSummary}</div>
+             ) : (
+               <div className="text-center py-20 text-slate-300 font-black uppercase text-xs tracking-widest">No review generated for {formatAppDate(diaryDate)}</div>
+             )}
           </div>
         )}
       </div>
