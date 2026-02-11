@@ -19,6 +19,16 @@ export const formatAppDate = (dateStr: string) => {
   return `${day}-${months[mIdx]}-${year}`;
 };
 
+// Robust ID generation for diverse environments
+const generateId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (e) {}
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [allTasks, setAllTasks] = useState<Task[]>(initialData?.tasks || []);
   const [teamMembers, setTeamMembers] = useState<string[]>(initialData?.team || ['Self']);
@@ -27,13 +37,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'tasks' | 'team' | 'overview' | 'stats' | 'summary'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'team' | 'overview' | 'summary'>('tasks');
   
-  // States for renaming
   const [editingMember, setEditingMember] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
-  // Initial Data Pull (Silent)
   useEffect(() => {
     if (!initialData && !user.isGuest) {
       apiService.fetchWorkspace(user.id).then(res => {
@@ -43,7 +51,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     }
   }, [user.id, user.isGuest, initialData]);
 
-  // AUTO-SYNC TO CENTRAL SERVER
   const syncToServer = useCallback(async (tasks: Task[], team: string[]) => {
     if (user.isGuest) return;
     setIsSyncing(true);
@@ -67,9 +74,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     return allTasks.filter(t => t.logDate === selectedDate);
   }, [allTasks, selectedDate]);
 
+  const totalHours = useMemo(() => {
+    return filteredTasks.reduce((acc, t) => acc + (t.duration || 0), 0);
+  }, [filteredTasks]);
+
   const addTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'logDate'>) => {
     const targetDate = taskData.dueDate || selectedDate;
-    const newTask: Task = { ...taskData, id: crypto.randomUUID(), createdAt: Date.now(), logDate: targetDate };
+    const newTask: Task = { ...taskData, id: generateId(), createdAt: Date.now(), logDate: targetDate };
     setAllTasks(prev => [newTask, ...prev]);
   };
 
@@ -85,8 +96,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     setAllTasks(prev => prev.map(t => t.id === id ? { ...t, logDate: newDate, postponedReason: reason } : t));
   };
 
-  const deleteTask = (id: string) => {
-    if (window.confirm("Remove this entry?")) setAllTasks(prev => prev.filter(t => t.id !== id));
+  const deleteTask = async (id: string) => {
+    if (window.confirm("Permanently remove this task from the server?")) {
+       // Optimistic Update: Remove from UI immediately
+       setAllTasks(prev => prev.filter(t => t.id !== id));
+       
+       // Server Delete
+       if (!user.isGuest) {
+         try {
+           await apiService.deleteTask(user.id, id);
+         } catch (e) {
+           alert("Failed to delete from server. Please check your connection.");
+           // Re-fetch to restore if critical, or let user retry
+         }
+       }
+    }
   };
 
   const addTeamMember = (e: React.FormEvent) => {
@@ -104,18 +128,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
       setEditingMember(null);
       return;
     }
-
     if (teamMembers.includes(newName)) {
       alert("A team member with this name already exists.");
       return;
     }
-
-    // Update Team List
     setTeamMembers(prev => prev.map(m => m === oldName ? newName : m));
-    
-    // Update all tasks assigned to this person (Cascade Update)
     setAllTasks(prev => prev.map(t => t.blocker === oldName ? { ...t, blocker: newName } : t));
-    
     setEditingMember(null);
     setRenameValue('');
   };
@@ -129,14 +147,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   };
 
   const statsData = [
-    { name: 'To Do', value: filteredTasks.filter(t => t.status === TaskStatus.TODO).length, color: '#6366f1' },
-    { name: 'In Progress', value: filteredTasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length, color: '#3b82f6' },
-    { name: 'Done', value: filteredTasks.filter(t => t.status === TaskStatus.DONE).length, color: '#10b981' },
+    { name: 'To Do', count: filteredTasks.filter(t => t.status === TaskStatus.TODO).length },
+    { name: 'Working', count: filteredTasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length },
+    { name: 'Done', count: filteredTasks.filter(t => t.status === TaskStatus.DONE).length },
   ];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* Date Navigation & Sync State */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex items-center gap-4">
           <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate()-1); setSelectedDate(d.toISOString().split('T')[0]); }} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500"><i className="fa-solid fa-chevron-left"></i></button>
@@ -148,6 +165,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
         </div>
         
         <div className="flex items-center gap-4">
+           {totalHours > 0 && (
+             <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl shadow-lg shadow-slate-200">
+                <i className="fa-solid fa-bolt text-indigo-400"></i>
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-black uppercase tracking-widest leading-none">Logged</span>
+                  <span className="text-sm font-black">{totalHours} Hours</span>
+                </div>
+             </div>
+           )}
            {isSyncing && (
              <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100 animate-pulse">
                 <i className="fa-solid fa-cloud-arrow-up text-[10px]"></i>
@@ -158,7 +184,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-slate-200 mb-8 gap-8 overflow-x-auto no-scrollbar">
         {[
           { id: 'tasks', label: 'Work Log', icon: 'fa-clipboard-list' },
@@ -178,7 +203,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
         ))}
       </div>
 
-      <div className="min-h-[500px] animate-in fade-in duration-500">
+      <div className="min-h-[500px]">
         {activeTab === 'tasks' && (
           <div className="space-y-6">
             <TaskForm onAdd={addTask} teamMembers={teamMembers} />
@@ -199,7 +224,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
               <h2 className="text-2xl font-black text-slate-800 mb-2 flex items-center gap-3">
                 <i className="fa-solid fa-users text-indigo-600"></i> Team Members
               </h2>
-              <p className="text-slate-400 text-sm mb-8">Manage users you can assign tasks or blockers to. Renaming a member updates all their assigned tasks.</p>
+              <p className="text-slate-400 text-sm mb-8">Manage users you can assign tasks or blockers to.</p>
               
               <form onSubmit={addTeamMember} className="flex gap-2 mb-10">
                 <input 
@@ -221,7 +246,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                       </div>
                       
                       {editingMember === m ? (
-                        <div className="flex items-center gap-2 flex-1 animate-in fade-in slide-in-from-left-2 duration-200">
+                        <div className="flex items-center gap-2 flex-1">
                           <input 
                             autoFocus
                             type="text"
@@ -231,47 +256,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                               if (e.key === 'Enter') handleRenameMember(m);
                               if (e.key === 'Escape') setEditingMember(null);
                             }}
-                            className="flex-1 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="flex-1 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg text-sm font-bold outline-none"
                           />
-                          <button 
-                            onClick={() => handleRenameMember(m)}
-                            className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
-                          >
-                            <i className="fa-solid fa-check"></i>
-                          </button>
-                          <button 
-                            onClick={() => setEditingMember(null)}
-                            className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors"
-                          >
-                            <i className="fa-solid fa-xmark"></i>
-                          </button>
+                          <button onClick={() => handleRenameMember(m)} className="p-2 text-emerald-500"><i className="fa-solid fa-check"></i></button>
                         </div>
                       ) : (
-                        <span className="font-bold text-slate-700 truncate">{m}</span>
+                        <span className="font-bold text-slate-700">{m}</span>
                       )}
                     </div>
                     
                     {!editingMember && (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => { setEditingMember(m); setRenameValue(m); }}
-                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                          title="Rename member"
-                        >
-                          <i className="fa-solid fa-pen-to-square"></i>
-                        </button>
+                        <button onClick={() => { setEditingMember(m); setRenameValue(m); }} className="p-2 text-slate-400 hover:text-indigo-600"><i className="fa-solid fa-pen-to-square"></i></button>
                         {m !== 'Self' && (
-                          <button 
-                            onClick={() => {
-                              if(window.confirm(`Delete ${m}? Tasks assigned to them will stay but they'll be marked as 'Former'.`)) {
-                                setTeamMembers(prev => prev.filter(x => x !== m));
-                              }
-                            }}
-                            className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete member"
-                          >
-                            <i className="fa-solid fa-trash-can text-sm"></i>
-                          </button>
+                          <button onClick={() => setTeamMembers(prev => prev.filter(x => x !== m))} className="p-2 text-slate-300 hover:text-red-500"><i className="fa-solid fa-trash-can text-sm"></i></button>
                         )}
                       </div>
                     )}
@@ -284,24 +282,33 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
         {activeTab === 'overview' && (
           <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center shadow-sm">
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Pending</span><br/>
-                <span className="text-5xl font-black text-slate-800">{statsData[0].value + statsData[1].value}</span>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 text-center shadow-sm">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Status: To Do</span><br/>
+                <span className="text-3xl font-black text-slate-800">{statsData[0].count}</span>
               </div>
-              <div className="bg-indigo-600 p-8 rounded-3xl border border-indigo-500 text-center shadow-xl shadow-indigo-100">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 text-center shadow-sm">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Status: Working</span><br/>
+                <span className="text-3xl font-black text-slate-800">{statsData[1].count}</span>
+              </div>
+              <div className="bg-indigo-600 p-6 rounded-3xl border border-indigo-500 text-center shadow-xl shadow-indigo-100">
                 <span className="text-[10px] font-black uppercase text-indigo-200 tracking-widest">Completed</span><br/>
-                <span className="text-5xl font-black text-white">{statsData[2].value}</span>
+                <span className="text-3xl font-black text-white">{statsData[2].count}</span>
               </div>
-              <div className="bg-white p-8 rounded-3xl border border-slate-200 text-center shadow-sm flex flex-col items-center justify-center gap-2">
+              <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center shadow-xl shadow-slate-200">
+                <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Total Hours</span><br/>
+                <span className="text-3xl font-black text-white">{totalHours}</span>
+              </div>
+            </div>
+            
+            <div className="bg-white p-10 rounded-3xl border border-slate-200 text-center">
                 <button 
                   onClick={handleGenerateSummary}
                   disabled={isGenerating || filteredTasks.length === 0}
-                  className="w-full bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] py-4 rounded-2xl hover:bg-slate-800 transition-all disabled:opacity-20"
+                  className="bg-slate-900 text-white font-black uppercase tracking-widest text-xs px-10 py-5 rounded-2xl hover:bg-slate-800 transition-all disabled:opacity-20"
                 >
-                  {isGenerating ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Summarize Day with AI'}
+                  {isGenerating ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Generate AI Summary for Report'}
                 </button>
-              </div>
             </div>
           </div>
         )}
@@ -316,11 +323,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                 {aiSummary}
               </div>
             ) : (
-              <div className="text-center py-20 text-slate-300">
-                <i className="fa-solid fa-wand-magic-sparkles text-4xl mb-4 block"></i>
-                <p className="font-bold">No summary generated for this date.</p>
-                <p className="text-xs">Go to Overview and click 'Summarize Day' to use AI.</p>
-              </div>
+              <div className="text-center py-20 text-slate-300 font-bold">No summary generated yet.</div>
             )}
           </div>
         )}

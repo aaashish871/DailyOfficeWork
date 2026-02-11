@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { TaskStatus, TaskPriority, Task } from '../types';
 
 interface TaskFormProps {
-  // Fix: logDate is derived in the parent Dashboard component, so it is omitted from the submission payload
   onAdd: (task: Omit<Task, 'id' | 'createdAt' | 'logDate'>) => void;
   teamMembers: string[];
 }
@@ -15,17 +14,14 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
   const [category, setCategory] = useState('Development');
   const [dueDate, setDueDate] = useState('');
   const [blocker, setBlocker] = useState('Self');
+  const [duration, setDuration] = useState<string>('');
 
-  // Safety check: if current blocker is removed from team, reset to 'Self' or first available
   useEffect(() => {
     if (!teamMembers.includes(blocker)) {
       setBlocker(teamMembers.includes('Self') ? 'Self' : (teamMembers[0] || ''));
     }
   }, [teamMembers]);
 
-  /**
-   * Helper to preview format as 10-Feb-2026
-   */
   const formatAppDate = (dateStr: string) => {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
@@ -38,7 +34,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    // logDate is intentionally omitted as it is handled in Dashboard.addTask
     onAdd({
       title,
       description,
@@ -47,12 +42,14 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
       category,
       dueDate: dueDate || undefined,
       blocker: blocker || undefined,
+      duration: duration ? parseFloat(duration) : undefined,
     });
 
     setTitle('');
     setDescription('');
     setPriority(TaskPriority.MEDIUM);
     setDueDate('');
+    setDuration('');
     setBlocker(teamMembers.includes('Self') ? 'Self' : (teamMembers[0] || ''));
   };
 
@@ -91,21 +88,30 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Completion Target (Due Date)</label>
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Duration (Hours)</label>
           <div className="relative">
+            <i className="fa-solid fa-clock absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
             <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+              type="number"
+              step="0.5"
+              min="0"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              placeholder="e.g. 1.5"
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white placeholder:text-slate-300"
             />
           </div>
-          {dueDate && (
-            <div className="mt-1 flex items-center gap-2">
-               <span className="text-[10px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded uppercase tracking-tighter">Formatted</span>
-               <p className="text-sm font-bold text-indigo-600 tracking-tight">{formatAppDate(dueDate)}</p>
-            </div>
-          )}
+          <p className="text-[9px] text-slate-400 font-bold uppercase">Actual time or estimate</p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Completion Target (Due Date)</label>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+          />
         </div>
 
         <div className="space-y-2">
@@ -121,16 +127,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
           </select>
         </div>
 
-        <div className="md:col-span-2 space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Additional Details</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Optional context for your manager..."
-            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none h-20 resize-none placeholder:text-slate-300"
-          />
-        </div>
-        
         <div className="space-y-2">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Priority Level</label>
           <select
@@ -144,7 +140,17 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, teamMembers }) => {
           </select>
         </div>
 
-        <div className="flex items-end">
+        <div className="md:col-span-2 space-y-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Additional Details</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional context for your manager..."
+            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none h-20 resize-none placeholder:text-slate-300"
+          />
+        </div>
+
+        <div className="md:col-span-2 flex items-end">
           <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-sm py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 transition-all active:scale-95">
             <i className="fa-solid fa-floppy-disk"></i> Save Entry
           </button>

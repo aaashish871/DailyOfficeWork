@@ -17,7 +17,7 @@ export interface User {
   email: string;
   isGuest: boolean;
   avatarColor: string;
-  isVerified: boolean; // Added for central server verification flow
+  isVerified: boolean;
 }
 
 export interface Task {
@@ -33,6 +33,7 @@ export interface Task {
   logDate: string;  
   blocker?: string; 
   postponedReason?: string; 
+  duration?: number; // Added: hours spent or estimated
 }
 
 export interface DailyLog {

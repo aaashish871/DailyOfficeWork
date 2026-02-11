@@ -11,9 +11,6 @@ interface TaskListProps {
   onMoveTask: (id: string, newDate: string, reason: string) => void;
 }
 
-/**
- * Utility to convert YYYY-MM-DD to DD-MMM-YYYY (e.g., 10-Feb-2026)
- */
 const formatAppDate = (dateStr: string) => {
   if (!dateStr) return '';
   const [year, month, day] = dateStr.split('-');
@@ -81,6 +78,12 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, teamMembers, onUpdateStatus,
                   <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
                     {task.category}
                   </span>
+                  {task.duration !== undefined && (
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-900 text-white flex items-center gap-1.5">
+                      <i className="fa-solid fa-clock"></i>
+                      {task.duration}h
+                    </span>
+                  )}
                   {task.dueDate && (
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1.5 ${isOverdue(task.dueDate) && task.status !== TaskStatus.DONE ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
                       <i className="fa-solid fa-calendar-day"></i>
