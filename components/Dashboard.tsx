@@ -92,6 +92,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     setAllTasks(prev => prev.map(t => t.id === id ? { ...t, blocker: responsible } : t));
   };
 
+  const updateTaskDuration = (id: string, duration: number) => {
+    setAllTasks(prev => prev.map(t => t.id === id ? { ...t, duration } : t));
+  };
+
   const moveTask = (id: string, newDate: string, reason: string) => {
     setAllTasks(prev => prev.map(t => t.id === id ? { ...t, logDate: newDate, postponedReason: reason } : t));
   };
@@ -212,6 +216,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
               teamMembers={teamMembers} 
               onUpdateStatus={updateTaskStatus} 
               onUpdateResponsible={updateTaskResponsible} 
+              onUpdateDuration={updateTaskDuration}
               onDelete={deleteTask} 
               onMoveTask={moveTask} 
             />

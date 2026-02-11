@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority } from '../types';
 
 interface TaskListProps {
@@ -7,6 +7,7 @@ interface TaskListProps {
   teamMembers: string[];
   onUpdateStatus: (id: string, status: TaskStatus) => void;
   onUpdateResponsible: (id: string, responsible: string) => void;
+  onUpdateDuration: (id: string, duration: number) => void;
   onDelete: (id: string) => void;
   onMoveTask: (id: string, newDate: string, reason: string) => void;
 }
@@ -19,10 +20,30 @@ const formatAppDate = (dateStr: string) => {
   return `${day}-${months[mIdx]}-${year}`;
 };
 
-const TaskList: React.FC<TaskListProps> = ({ tasks, teamMembers, onUpdateStatus, onUpdateResponsible, onDelete, onMoveTask }) => {
+const TaskList: React.FC<TaskListProps> = ({ 
+  tasks, 
+  teamMembers, 
+  onUpdateStatus, 
+  onUpdateResponsible, 
+  onUpdateDuration,
+  onDelete, 
+  onMoveTask 
+}) => {
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null);
   const [moveDate, setMoveDate] = useState('');
   const [moveReason, setMoveReason] = useState('');
+  
+  // Inline duration editing state
+  const [editingDurationId, setEditingDurationId] = useState<string | null>(null);
+  const [tempDuration, setTempDuration] = useState<string>('');
+  const durationInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingDurationId && durationInputRef.current) {
+      durationInputRef.current.focus();
+      durationInputRef.current.select();
+    }
+  }, [editingDurationId]);
 
   const getPriorityColor = (priority: TaskPriority) => {
     switch (priority) {
@@ -46,6 +67,19 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, teamMembers, onUpdateStatus,
       setMoveDate('');
       setMoveReason('');
     }
+  };
+
+  const startEditingDuration = (task: Task) => {
+    setEditingDurationId(task.id);
+    setTempDuration(task.duration?.toString() || '0');
+  };
+
+  const saveDuration = (id: string) => {
+    const val = parseFloat(tempDuration);
+    if (!isNaN(val)) {
+      onUpdateDuration(id, val);
+    }
+    setEditingDurationId(null);
   };
 
   if (tasks.length === 0) {
@@ -78,12 +112,43 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, teamMembers, onUpdateStatus,
                   <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
                     {task.category}
                   </span>
-                  {task.duration !== undefined && (
-                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-900 text-white flex items-center gap-1.5">
-                      <i className="fa-solid fa-clock"></i>
-                      {task.duration}h
-                    </span>
-                  )}
+                  
+                  {/* Editable Duration Badge */}
+                  <div className="relative">
+                    {editingDurationId === task.id ? (
+                      <div className="flex items-center bg-slate-900 rounded-full px-1 py-0.5 border border-indigo-500 shadow-lg ring-2 ring-indigo-500/20">
+                        <input
+                          ref={durationInputRef}
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={tempDuration}
+                          onChange={(e) => setTempDuration(e.target.value)}
+                          onBlur={() => saveDuration(task.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveDuration(task.id);
+                            if (e.key === 'Escape') setEditingDurationId(null);
+                          }}
+                          className="bg-transparent text-white text-[10px] font-black w-10 outline-none text-center px-1"
+                        />
+                        <span className="text-[10px] font-black text-indigo-400 pr-1.5">H</span>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => startEditingDuration(task)}
+                        className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1.5 transition-all hover:scale-105 active:scale-95 ${
+                          task.duration !== undefined 
+                            ? 'bg-slate-900 text-white' 
+                            : 'bg-slate-100 text-slate-400 border border-slate-200 border-dashed hover:bg-slate-200'
+                        }`}
+                        title="Click to edit duration"
+                      >
+                        <i className="fa-solid fa-clock"></i>
+                        {task.duration !== undefined ? `${task.duration}h` : 'Add Time'}
+                      </button>
+                    )}
+                  </div>
+
                   {task.dueDate && (
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1.5 ${isOverdue(task.dueDate) && task.status !== TaskStatus.DONE ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
                       <i className="fa-solid fa-calendar-day"></i>
