@@ -40,7 +40,8 @@ export interface Task {
 export interface ImportantPoint {
   id: string;
   content: string;
-  module: string; // New: Categorization for knowledge
+  note?: string; // New: Detailed hint/note for the knowledge point
+  module: string; 
   createdAt: number;
 }
 

@@ -101,6 +101,7 @@ export const apiService = {
       points: (pointsData || []).map(p => ({
         id: p.id,
         content: p.content,
+        note: p.note, // Mapped from DB
         module: p.module || 'General',
         createdAt: new Date(p.created_at).getTime()
       }))
@@ -179,6 +180,7 @@ export const apiService = {
         id: p.id,
         user_id: userId, 
         content: p.content,
+        note: p.note, // Sync to DB
         module: p.module,
         created_at: new Date(p.createdAt).toISOString()
       }));
