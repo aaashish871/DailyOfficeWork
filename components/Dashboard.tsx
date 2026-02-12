@@ -8,7 +8,7 @@ import { apiService } from '../services/apiService';
 
 interface DashboardProps {
   user: User;
-  initialData?: { tasks: Task[]; team: string[]; categories: string[]; points?: ImportantPoint[] };
+  initialData?: { tasks: Task[]; team: string[]; categories: string[]; points?: ImportantPoint[]; modules?: string[] };
 }
 
 export const formatAppDate = (dateStr: string) => {
@@ -35,13 +35,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [teamMembers, setTeamMembers] = useState<string[]>(initialData?.team || ['Self']);
   const [categories, setCategories] = useState<string[]>(initialData?.categories || ['Meeting', 'Development', 'Bug Fix', 'Testing', 'Planning']);
   const [importantPoints, setImportantPoints] = useState<ImportantPoint[]>(initialData?.points || []);
+  const [modules, setModules] = useState<string[]>(initialData?.modules || ['General', 'Technical', 'Process', 'Credentials']);
   
   const [newMemberName, setNewMemberName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newModuleName, setNewModuleName] = useState('');
   const [newPointContent, setNewPointContent] = useState('');
+  const [selectedPointModule, setSelectedPointModule] = useState<string>('');
+  const [pointsSearch, setPointsSearch] = useState('');
   
-  // States for renaming categories
+  // States for renaming
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
+  const [renamingModule, setRenamingModule] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   
   const [diaryDate, setDiaryDate] = useState<string>(todayStr);
@@ -57,21 +62,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [activeTab, setActiveTab] = useState<'diary' | 'planner' | 'future' | 'team' | 'overview' | 'summary' | 'points'>('diary');
 
   useEffect(() => {
+    if (modules.length > 0 && !selectedPointModule) {
+      setSelectedPointModule(modules[0]);
+    }
+  }, [modules]);
+
+  useEffect(() => {
     if (!initialData && !user.isGuest) {
       apiService.fetchWorkspace(user.id).then(res => {
         setAllTasks(res.tasks);
         setTeamMembers(res.team);
         setCategories(res.categories);
         setImportantPoints(res.points || []);
+        setModules(res.modules || []);
       });
     }
   }, [user.id, user.isGuest, initialData]);
 
-  const syncToServer = useCallback(async (tasks: Task[], team: string[], cats: string[], points: ImportantPoint[]) => {
+  const syncToServer = useCallback(async (tasks: Task[], team: string[], cats: string[], points: ImportantPoint[], mods: string[]) => {
     if (user.isGuest) return;
     setSyncStatus('syncing');
     try {
-      await apiService.syncWorkspace(user.id, tasks, team, cats, points);
+      await apiService.syncWorkspace(user.id, tasks, team, cats, points, mods);
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus(prev => prev === 'synced' ? 'idle' : prev), 3000);
     } catch (e) {
@@ -81,15 +93,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      syncToServer(allTasks, teamMembers, categories, importantPoints);
+      syncToServer(allTasks, teamMembers, categories, importantPoints, modules);
     }, 1500);
     return () => clearTimeout(timeout);
-  }, [allTasks, teamMembers, categories, importantPoints, syncToServer]);
+  }, [allTasks, teamMembers, categories, importantPoints, modules, syncToServer]);
 
-  const diaryTasks = useMemo(() => allTasks.filter(t => t.logDate === diaryDate && t.status === TaskStatus.DONE), [allTasks, diaryDate]);
-  const todayPlannedTasks = useMemo(() => allTasks.filter(t => t.logDate === todayStr && t.status !== TaskStatus.DONE), [allTasks, todayStr]);
-  const futurePlannedTasks = useMemo(() => allTasks.filter(t => t.logDate === futureDate && t.status !== TaskStatus.DONE), [allTasks, futureDate]);
-  const totalHoursLogged = useMemo(() => diaryTasks.reduce((acc, t) => acc + (t.duration || 0), 0), [diaryTasks]);
+  // Fixed: Explicitly type useMemo to ensure TypeScript correctly recognizes types
+  const diaryTasks = useMemo<Task[]>(() => allTasks.filter(t => t.logDate === diaryDate && t.status === TaskStatus.DONE), [allTasks, diaryDate]);
+  const todayPlannedTasks = useMemo<Task[]>(() => allTasks.filter(t => t.logDate === todayStr && t.status !== TaskStatus.DONE), [allTasks, todayStr]);
+  const futurePlannedTasks = useMemo<Task[]>(() => allTasks.filter(t => t.logDate === futureDate && t.status !== TaskStatus.DONE), [allTasks, futureDate]);
+  const totalHoursLogged = useMemo<number>(() => diaryTasks.reduce((acc, t) => acc + (t.duration || 0), 0), [diaryTasks]);
+
+  const groupedPoints = useMemo(() => {
+    const filtered = importantPoints.filter(p => p.content.toLowerCase().includes(pointsSearch.toLowerCase()));
+    const groups: Record<string, ImportantPoint[]> = {};
+    
+    // Ensure every module has a group, even if empty
+    modules.forEach(m => groups[m] = []);
+    
+    filtered.forEach(p => {
+      if (!groups[p.module]) groups[p.module] = [];
+      groups[p.module].push(p);
+    });
+
+    return groups;
+  }, [importantPoints, pointsSearch, modules]);
 
   const addTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'logDate'>) => {
     let targetDate = todayStr;
@@ -137,27 +165,42 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     }
   };
 
-  const deleteCategory = (name: string) => {
-    if (categories.length <= 1) {
-      alert("At least one category is required.");
-      return;
+  const addModule = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newModuleName.trim();
+    if (name && !modules.includes(name)) {
+      setModules(prev => [...prev, name]);
+      setNewModuleName('');
     }
+  };
+
+  const deleteCategory = (name: string) => {
+    if (categories.length <= 1) return alert("At least one category is required.");
     setCategories(prev => prev.filter(c => c !== name));
+  };
+
+  const deleteModule = (name: string) => {
+    if (modules.length <= 1) return alert("At least one module is required.");
+    setModules(prev => prev.filter(m => m !== name));
+    setImportantPoints(prev => prev.map(p => p.module === name ? { ...p, module: 'General' } : p));
   };
 
   const handleRenameCategory = (oldName: string) => {
     const newName = renameValue.trim();
-    if (!newName || newName === oldName) {
-      setRenamingCategory(null);
-      return;
-    }
-    if (categories.includes(newName)) {
-      alert("This category name already exists.");
-      return;
-    }
+    if (!newName || newName === oldName) return setRenamingCategory(null);
+    if (categories.includes(newName)) return alert("Category already exists.");
     setCategories(prev => prev.map(c => c === oldName ? newName : c));
     setAllTasks(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
     setRenamingCategory(null);
+  };
+
+  const handleRenameModule = (oldName: string) => {
+    const newName = renameValue.trim();
+    if (!newName || newName === oldName) return setRenamingModule(null);
+    if (modules.includes(newName)) return alert("Module already exists.");
+    setModules(prev => prev.map(m => m === oldName ? newName : m));
+    setImportantPoints(prev => prev.map(p => p.module === oldName ? { ...p, module: newName } : p));
+    setRenamingModule(null);
   };
 
   const addPoint = (e: React.FormEvent) => {
@@ -166,6 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
     const newPoint: ImportantPoint = {
       id: generateId(),
       content: newPointContent.trim(),
+      module: selectedPointModule || 'General',
       createdAt: Date.now()
     };
     setImportantPoints(prev => [newPoint, ...prev]);
@@ -304,46 +348,93 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
         {activeTab === 'points' && (
           <div className="animate-in fade-in space-y-8">
             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
-              <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-3">
-                <i className="fa-solid fa-lightbulb text-amber-400"></i> Knowledge Base
-              </h2>
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-8 ml-9">Record important points, shortcuts, or links here for quick reference.</p>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div>
+                  <h2 className="text-xl font-black text-slate-800 mb-1 flex items-center gap-3">
+                    <i className="fa-solid fa-lightbulb text-amber-400"></i> Knowledge Hub
+                  </h2>
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-9">Grouped by module for enterprise efficiency.</p>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
+                  <input 
+                    type="text" 
+                    value={pointsSearch} 
+                    onChange={(e) => setPointsSearch(e.target.value)} 
+                    placeholder="Search all modules..." 
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+              </div>
               
-              <form onSubmit={addPoint} className="flex gap-4 mb-10">
-                <input 
-                  type="text" 
-                  value={newPointContent} 
-                  onChange={(e) => setNewPointContent(e.target.value)} 
-                  placeholder="Type an important point (e.g. Server IP: 192.168.1.1)..." 
-                  className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-amber-400 transition-all" 
-                />
-                <button type="submit" className="bg-amber-400 text-slate-900 px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all">Add Point</button>
+              <form onSubmit={addPoint} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                <div className="md:col-span-1">
+                   <label className="text-[8px] font-black uppercase text-slate-400 block mb-1.5 ml-1">Target Module</label>
+                   <select 
+                    value={selectedPointModule} 
+                    onChange={(e) => setSelectedPointModule(e.target.value)}
+                    className="w-full bg-white border border-slate-200 px-4 py-3.5 rounded-2xl outline-none font-bold text-slate-600 text-xs shadow-sm"
+                   >
+                     {modules.map(m => (
+                       <option key={m} value={m}>{m}</option>
+                     ))}
+                   </select>
+                </div>
+                <div className="md:col-span-2">
+                   <label className="text-[8px] font-black uppercase text-slate-400 block mb-1.5 ml-1">The Insight / Knowledge</label>
+                   <input 
+                    type="text" 
+                    value={newPointContent} 
+                    onChange={(e) => setNewPointContent(e.target.value)} 
+                    placeholder="e.g. Production URL: https://api.prod..." 
+                    className="w-full bg-white border border-slate-200 px-6 py-3.5 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-amber-400 transition-all shadow-sm" 
+                   />
+                </div>
+                <div className="md:col-span-1 flex items-end">
+                   <button type="submit" className="w-full bg-amber-400 text-slate-900 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all">Save Note</button>
+                </div>
               </form>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {importantPoints.length === 0 ? (
-                  <div className="md:col-span-3 py-20 text-center border-2 border-dashed border-slate-100 rounded-[2rem]">
-                    <i className="fa-solid fa-note-sticky text-4xl text-slate-100 mb-4"></i>
-                    <p className="text-slate-300 font-black uppercase text-[10px] tracking-[0.3em]">No saved insights yet</p>
-                  </div>
-                ) : (
-                  importantPoints.map(p => (
-                    <div key={p.id} className="bg-amber-50/30 border border-amber-100/50 p-6 rounded-[2rem] relative group hover:shadow-xl hover:shadow-amber-50/50 transition-all hover:-translate-y-1">
-                      <button onClick={() => deletePoint(p.id)} className="absolute top-4 right-4 text-amber-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <i className="fa-solid fa-circle-xmark"></i>
-                      </button>
-                      <p className="text-slate-800 font-bold leading-relaxed pr-6">{p.content}</p>
-                      <div className="mt-4 flex items-center justify-between">
-                        <span className="text-[8px] font-black uppercase text-amber-300 tracking-widest">
-                          {new Date(p.createdAt).toLocaleDateString()}
-                        </span>
-                        <button onClick={() => { navigator.clipboard.writeText(p.content); }} className="text-[8px] font-black uppercase text-amber-400 hover:text-amber-600 tracking-widest flex items-center gap-1.5 transition-colors">
-                          <i className="fa-solid fa-copy"></i> Copy
-                        </button>
+              {/* Grouped Knowledge List */}
+              <div className="space-y-12">
+                {Object.entries(groupedPoints).map(([module, points]) => (
+                  <div key={module} className="animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="h-[1px] flex-1 bg-slate-100"></div>
+                      <div className="flex items-center gap-2 px-5 py-2 bg-slate-900 rounded-full">
+                        <i className="fa-solid fa-folder-open text-amber-400 text-[10px]"></i>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">{module}</span>
+                        <span className="bg-white/10 text-white text-[8px] px-1.5 py-0.5 rounded-md ml-1">{points.length}</span>
                       </div>
+                      <div className="h-[1px] flex-1 bg-slate-100"></div>
                     </div>
-                  ))
-                )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {points.length === 0 ? (
+                        <div className="md:col-span-3 py-10 text-center border border-dashed border-slate-100 rounded-[2rem]">
+                          <p className="text-slate-300 font-bold uppercase text-[9px] tracking-widest italic">No entries for this module yet</p>
+                        </div>
+                      ) : (
+                        points.map(p => (
+                          <div key={p.id} className="bg-white border border-slate-100 p-6 rounded-[2rem] relative group hover:shadow-xl hover:border-amber-100 transition-all hover:-translate-y-1 shadow-sm">
+                            <button onClick={() => deletePoint(p.id)} className="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center text-slate-200 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
+                              <i className="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                            <p className="text-slate-800 font-bold leading-relaxed pr-6 text-sm">{p.content}</p>
+                            <div className="mt-6 pt-4 border-t border-slate-50 flex items-center justify-between">
+                              <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">
+                                {new Date(p.createdAt).toLocaleDateString()}
+                              </span>
+                              <button onClick={() => { navigator.clipboard.writeText(p.content); }} className="text-[9px] font-black uppercase text-amber-600 hover:text-amber-800 tracking-widest flex items-center gap-2 px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-100 active:scale-90 transition-all">
+                                <i className="fa-solid fa-copy"></i> Copy
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -351,6 +442,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
         {activeTab === 'team' && (
           <div className="space-y-10 animate-in fade-in">
+             {/* Module Management */}
+             <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
+               <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-3">
+                 <i className="fa-solid fa-folder-tree text-amber-500"></i> Knowledge Modules
+               </h2>
+               <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-8 ml-9">Create custom buckets to organize your hints and technical points.</p>
+               
+               <form onSubmit={addModule} className="flex gap-4 mb-8">
+                 <input type="text" value={newModuleName} onChange={(e) => setNewModuleName(e.target.value)} placeholder="New module name (e.g. AWS, HR Portal)..." className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-amber-400 transition-all" />
+                 <button type="submit" className="bg-amber-400 text-slate-900 px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all">Add Module</button>
+               </form>
+               
+               <div className="flex flex-wrap gap-4">
+                 {modules.map(m => (
+                   <div key={m} className="flex items-center gap-3 px-6 py-4 bg-slate-50 border border-slate-100 rounded-[1.5rem] font-bold text-slate-700 group transition-all hover:bg-white hover:shadow-md hover:border-amber-100">
+                     {renamingModule === m ? (
+                       <div className="flex items-center gap-2">
+                          <input 
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onBlur={() => handleRenameModule(m)}
+                            onKeyDown={(e) => { if(e.key === 'Enter') handleRenameModule(m); if(e.key === 'Escape') setRenamingModule(null); }}
+                            className="bg-white border border-amber-200 px-3 py-1.5 rounded-xl text-sm outline-none w-32 font-black shadow-inner"
+                          />
+                          <button onClick={() => handleRenameModule(m)} className="text-emerald-500 hover:text-emerald-600"><i className="fa-solid fa-circle-check"></i></button>
+                       </div>
+                     ) : (
+                       <>
+                         <span className="text-sm font-black">{m}</span>
+                         <div className="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button onClick={() => { setRenamingModule(m); setRenameValue(m); }} className="w-8 h-8 rounded-lg text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition-all flex items-center justify-center"><i className="fa-solid fa-pen-to-square text-xs"></i></button>
+                           <button onClick={() => deleteModule(m)} className="w-8 h-8 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center"><i className="fa-solid fa-trash-can text-xs"></i></button>
+                         </div>
+                       </>
+                     )}
+                   </div>
+                 ))}
+               </div>
+             </div>
+
              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
                <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-3">
                  <i className="fa-solid fa-tags text-indigo-600"></i> Category Management
@@ -372,10 +504,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                             value={renameValue}
                             onChange={(e) => setRenameValue(e.target.value)}
                             onBlur={() => handleRenameCategory(c)}
-                            onKeyDown={(e) => { 
-                              if(e.key === 'Enter') handleRenameCategory(c); 
-                              if(e.key === 'Escape') setRenamingCategory(null); 
-                            }}
+                            onKeyDown={(e) => { if(e.key === 'Enter') handleRenameCategory(c); if(e.key === 'Escape') setRenamingCategory(null); }}
                             className="bg-white border border-indigo-200 px-3 py-1.5 rounded-xl text-sm outline-none w-32 font-black shadow-inner"
                           />
                           <button onClick={() => handleRenameCategory(c)} className="text-emerald-500 hover:text-emerald-600"><i className="fa-solid fa-circle-check"></i></button>
@@ -391,6 +520,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                      )}
                    </div>
                  ))}
+               </div>
+             </div>
+
+             <div className="bg-slate-900 p-10 rounded-[2.5rem] text-white shadow-xl">
+               <h2 className="text-xl font-black mb-2 flex items-center gap-3">
+                 <i className="fa-solid fa-database text-indigo-400"></i> Database Schema Requirement
+               </h2>
+               <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest mb-6 ml-9 opacity-80">Final updates for categorized knowledge support.</p>
+               
+               <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 font-mono text-[10px] leading-relaxed text-emerald-400 overflow-x-auto">
+                 <p className="mb-2">-- Module Categorization Update</p>
+                 <p>CREATE TABLE IF NOT EXISTS knowledge_modules (id BIGSERIAL PRIMARY KEY, user_id UUID REFERENCES auth.users(id), name TEXT);</p>
+                 <p>ALTER TABLE important_points ADD COLUMN IF NOT EXISTS module TEXT DEFAULT 'General';</p>
                </div>
              </div>
 
@@ -418,11 +560,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 animate-in fade-in">
              <div className="bg-white p-12 rounded-[3rem] border border-slate-200 text-center shadow-sm">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4">Completed Logs</span>
-                <span className="text-6xl font-black text-slate-800 tracking-tighter">{allTasks.filter(t => t.status === TaskStatus.DONE).length}</span>
+                {/* Fixed: Use explicit cast to Task[] to avoid unknown type inference errors */}
+                <span className="text-6xl font-black text-slate-800 tracking-tighter">{(allTasks as Task[]).filter(t => t.status === TaskStatus.DONE).length}</span>
              </div>
              <div className="bg-indigo-600 p-12 rounded-[3rem] text-center shadow-2xl shadow-indigo-100 border border-indigo-500">
                 <span className="text-[10px] font-black uppercase text-indigo-200 tracking-widest block mb-4">Open Commitments</span>
-                <span className="text-6xl font-black text-white tracking-tighter">{allTasks.filter(t => t.status !== TaskStatus.DONE).length}</span>
+                {/* Fixed: Use explicit cast to Task[] to avoid unknown type inference errors */}
+                <span className="text-6xl font-black text-white tracking-tighter">{(allTasks as Task[]).filter(t => t.status !== TaskStatus.DONE).length}</span>
              </div>
              <div className="bg-slate-900 p-12 rounded-[3rem] text-center shadow-sm">
                 <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest block mb-4">Logged Hours</span>

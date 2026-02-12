@@ -24,7 +24,7 @@ export interface Task {
   id: string;
   title: string;
   description: string;
-  notes?: string; // New: Hints/Notes for specific tasks
+  notes?: string; 
   status: TaskStatus;
   priority: TaskPriority;
   category: string;
@@ -40,6 +40,7 @@ export interface Task {
 export interface ImportantPoint {
   id: string;
   content: string;
+  module: string; // New: Categorization for knowledge
   createdAt: number;
 }
 

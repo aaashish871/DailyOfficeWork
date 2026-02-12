@@ -2,22 +2,23 @@
 import React, { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import Auth from './components/Auth';
-import { User } from './types';
+import { User, Task, ImportantPoint } from './types';
 import { apiService } from './services/apiService';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initialData, setInitialData] = useState<{ tasks: any[]; team: string[] } | undefined>();
+  // Fixed: Define specific types for initialData instead of using any[]
+  const [initialData, setInitialData] = useState<{ tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[]; modules: string[] } | undefined>();
 
   useEffect(() => {
-    // Check for existing real session from SQL Server
     const checkAuth = async () => {
       try {
         const currentUser = await apiService.getCurrentUser();
         if (currentUser) {
           const workspace = await apiService.fetchWorkspace(currentUser.id);
           setUser(currentUser);
+          // Fixed: Remove unnecessary 'as any' cast as fetchWorkspace returns correct types
           setInitialData(workspace);
         }
       } catch (e) {
@@ -29,7 +30,7 @@ const App: React.FC = () => {
     checkAuth();
   }, []);
 
-  const handleLogin = (newUser: User, data?: { tasks: any[]; team: string[] }) => {
+  const handleLogin = (newUser: User, data?: any) => {
     setUser(newUser);
     setInitialData(data);
   };

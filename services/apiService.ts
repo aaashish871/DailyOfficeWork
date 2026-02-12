@@ -11,7 +11,7 @@ const mapDbTaskToTask = (t: any): Task => ({
   id: t.id,
   title: t.title,
   description: t.description,
-  notes: t.notes, // Correctly mapped from DB column
+  notes: t.notes, 
   status: t.status as TaskStatus,
   priority: t.priority,
   category: t.category,
@@ -43,7 +43,7 @@ export const apiService = {
     }
   },
 
-  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[] }> => {
+  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[]; modules: string[] }> => {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) throw authError;
     const user = authData.user;
@@ -83,30 +83,35 @@ export const apiService = {
     };
   },
 
-  fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[] }> => {
+  fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[]; modules: string[] }> => {
     const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     const { data: teamData } = await supabase.from('team_members').select('name').eq('user_id', userId);
     const { data: catData } = await supabase.from('task_categories').select('name').eq('user_id', userId);
     const { data: pointsData } = await supabase.from('important_points').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    const { data: moduleData } = await supabase.from('knowledge_modules').select('name').eq('user_id', userId);
 
     const defaultCategories = ['Meeting', 'Development', 'Bug Fix', 'Testing', 'Documentation', 'Planning', 'Admin'];
+    const defaultModules = ['General', 'Technical', 'Process', 'Credentials'];
 
     return {
       tasks: (tasksData || []).map(mapDbTaskToTask),
       team: teamData && teamData.length > 0 ? teamData.map(t => t.name) : ['Self'],
       categories: catData && catData.length > 0 ? catData.map(c => c.name) : defaultCategories,
+      modules: moduleData && moduleData.length > 0 ? moduleData.map(m => m.name) : defaultModules,
       points: (pointsData || []).map(p => ({
         id: p.id,
         content: p.content,
+        module: p.module || 'General',
         createdAt: new Date(p.created_at).getTime()
       }))
     };
   },
 
-  syncWorkspace: async (userId: string, tasks: Task[], team: string[], categories: string[], points: ImportantPoint[]): Promise<void> => {
+  syncWorkspace: async (userId: string, tasks: Task[], team: string[], categories: string[], points: ImportantPoint[], modules: string[]): Promise<void> => {
     try {
       await apiService.syncTeam(userId, team);
       await apiService.syncCategories(userId, categories);
+      await apiService.syncModules(userId, modules);
       await apiService.syncPoints(userId, points);
       const results = await Promise.allSettled(tasks.map(task => apiService.syncTask(userId, task)));
       const failures = results.filter(r => r.status === 'rejected');
@@ -123,7 +128,7 @@ export const apiService = {
       user_id: userId,
       title: task.title,
       description: task.description,
-      notes: task.notes, // Included in payload
+      notes: task.notes, 
       status: task.status,
       priority: task.priority,
       category: task.category,
@@ -159,6 +164,14 @@ export const apiService = {
     }
   },
 
+  syncModules: async (userId: string, modules: string[]): Promise<void> => {
+    await supabase.from('knowledge_modules').delete().eq('user_id', userId);
+    if (modules.length > 0) {
+      const inserts = modules.map(m => ({ user_id: userId, name: m }));
+      await supabase.from('knowledge_modules').insert(inserts);
+    }
+  },
+
   syncPoints: async (userId: string, points: ImportantPoint[]): Promise<void> => {
     await supabase.from('important_points').delete().eq('user_id', userId);
     if (points.length > 0) {
@@ -166,6 +179,7 @@ export const apiService = {
         id: p.id,
         user_id: userId, 
         content: p.content,
+        module: p.module,
         created_at: new Date(p.createdAt).toISOString()
       }));
       await supabase.from('important_points').insert(inserts);
