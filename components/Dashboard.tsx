@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Task, TaskStatus, User } from '../types';
+import { Task, TaskStatus, User, ImportantPoint } from '../types';
 import TaskForm from './TaskForm';
 import TaskList from './TaskList';
 import { generateDailySummary } from '../services/geminiService';
@@ -8,7 +8,7 @@ import { apiService } from '../services/apiService';
 
 interface DashboardProps {
   user: User;
-  initialData?: { tasks: Task[]; team: string[]; categories: string[] };
+  initialData?: { tasks: Task[]; team: string[]; categories: string[]; points?: ImportantPoint[] };
 }
 
 export const formatAppDate = (dateStr: string) => {
@@ -34,9 +34,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [allTasks, setAllTasks] = useState<Task[]>(initialData?.tasks || []);
   const [teamMembers, setTeamMembers] = useState<string[]>(initialData?.team || ['Self']);
   const [categories, setCategories] = useState<string[]>(initialData?.categories || ['Meeting', 'Development', 'Bug Fix', 'Testing', 'Planning']);
+  const [importantPoints, setImportantPoints] = useState<ImportantPoint[]>(initialData?.points || []);
   
   const [newMemberName, setNewMemberName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newPointContent, setNewPointContent] = useState('');
   
   // States for renaming categories
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
@@ -52,7 +54,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
   const [aiSummary, setAiSummary] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
-  const [activeTab, setActiveTab] = useState<'diary' | 'planner' | 'future' | 'team' | 'overview' | 'summary'>('diary');
+  const [activeTab, setActiveTab] = useState<'diary' | 'planner' | 'future' | 'team' | 'overview' | 'summary' | 'points'>('diary');
 
   useEffect(() => {
     if (!initialData && !user.isGuest) {
@@ -60,15 +62,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
         setAllTasks(res.tasks);
         setTeamMembers(res.team);
         setCategories(res.categories);
+        setImportantPoints(res.points || []);
       });
     }
   }, [user.id, user.isGuest, initialData]);
 
-  const syncToServer = useCallback(async (tasks: Task[], team: string[], cats: string[]) => {
+  const syncToServer = useCallback(async (tasks: Task[], team: string[], cats: string[], points: ImportantPoint[]) => {
     if (user.isGuest) return;
     setSyncStatus('syncing');
     try {
-      await apiService.syncWorkspace(user.id, tasks, team, cats);
+      await apiService.syncWorkspace(user.id, tasks, team, cats, points);
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus(prev => prev === 'synced' ? 'idle' : prev), 3000);
     } catch (e) {
@@ -78,10 +81,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      syncToServer(allTasks, teamMembers, categories);
+      syncToServer(allTasks, teamMembers, categories, importantPoints);
     }, 1500);
     return () => clearTimeout(timeout);
-  }, [allTasks, teamMembers, categories, syncToServer]);
+  }, [allTasks, teamMembers, categories, importantPoints, syncToServer]);
 
   const diaryTasks = useMemo(() => allTasks.filter(t => t.logDate === diaryDate && t.status === TaskStatus.DONE), [allTasks, diaryDate]);
   const todayPlannedTasks = useMemo(() => allTasks.filter(t => t.logDate === todayStr && t.status !== TaskStatus.DONE), [allTasks, todayStr]);
@@ -152,14 +155,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
       alert("This category name already exists.");
       return;
     }
-
-    // 1. Update the master category list
     setCategories(prev => prev.map(c => c === oldName ? newName : c));
-    
-    // 2. Propagate changes to all existing tasks that used the old category name
     setAllTasks(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
-    
     setRenamingCategory(null);
+  };
+
+  const addPoint = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPointContent.trim()) return;
+    const newPoint: ImportantPoint = {
+      id: generateId(),
+      content: newPointContent.trim(),
+      createdAt: Date.now()
+    };
+    setImportantPoints(prev => [newPoint, ...prev]);
+    setNewPointContent('');
+  };
+
+  const deletePoint = (id: string) => {
+    setImportantPoints(prev => prev.filter(p => p.id !== id));
   };
 
   const addTeamMember = (e: React.FormEvent) => {
@@ -213,9 +227,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                 <button onClick={() => { const d = new Date(futureDate); d.setDate(d.getDate()+1); setFutureDate(d.toISOString().split('T')[0]); }} className="p-3 hover:bg-white rounded-xl text-slate-400"><i className="fa-solid fa-chevron-right"></i></button>
               </>
             )}
-            {['team', 'overview', 'summary'].includes(activeTab) && (
+            {['team', 'overview', 'summary', 'points'].includes(activeTab) && (
               <div className="px-10 py-2">
-                 <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.3em]">Workspace Settings</span>
+                 <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.3em]">Workspace Central</span>
               </div>
             )}
           </div>
@@ -236,11 +250,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
       </div>
 
       {/* Tabs Menu */}
-      <div className="flex border-b border-slate-200 mb-10 gap-10 overflow-x-auto no-scrollbar">
+      <div className="flex border-b border-slate-200 mb-10 gap-8 overflow-x-auto no-scrollbar">
         {[
           { id: 'diary', label: 'Work Diary', icon: 'fa-book-bookmark' },
           { id: 'planner', label: 'Today\'s Plan', icon: 'fa-bolt' },
           { id: 'future', label: 'Future Tasks', icon: 'fa-calendar-plus' },
+          { id: 'points', label: 'Knowledge', icon: 'fa-lightbulb' },
           { id: 'team', label: 'Workspace', icon: 'fa-users-gear' },
           { id: 'overview', label: 'Stats', icon: 'fa-chart-simple' },
           { id: 'summary', label: 'AI Review', icon: 'fa-wand-magic-sparkles' }
@@ -248,7 +263,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
           <button 
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`pb-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all relative flex items-center gap-3 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`pb-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all whitespace-nowrap relative flex items-center gap-3 ${activeTab === tab.id ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <i className={`fa-solid ${tab.icon} text-xs`}></i>
             {tab.label}
@@ -286,9 +301,56 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
           </div>
         )}
 
+        {activeTab === 'points' && (
+          <div className="animate-in fade-in space-y-8">
+            <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-3">
+                <i className="fa-solid fa-lightbulb text-amber-400"></i> Knowledge Base
+              </h2>
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-8 ml-9">Record important points, shortcuts, or links here for quick reference.</p>
+              
+              <form onSubmit={addPoint} className="flex gap-4 mb-10">
+                <input 
+                  type="text" 
+                  value={newPointContent} 
+                  onChange={(e) => setNewPointContent(e.target.value)} 
+                  placeholder="Type an important point (e.g. Server IP: 192.168.1.1)..." 
+                  className="flex-1 bg-slate-50 border border-slate-200 px-6 py-4 rounded-2xl outline-none font-bold focus:ring-2 focus:ring-amber-400 transition-all" 
+                />
+                <button type="submit" className="bg-amber-400 text-slate-900 px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-amber-100 active:scale-95 transition-all">Add Point</button>
+              </form>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {importantPoints.length === 0 ? (
+                  <div className="md:col-span-3 py-20 text-center border-2 border-dashed border-slate-100 rounded-[2rem]">
+                    <i className="fa-solid fa-note-sticky text-4xl text-slate-100 mb-4"></i>
+                    <p className="text-slate-300 font-black uppercase text-[10px] tracking-[0.3em]">No saved insights yet</p>
+                  </div>
+                ) : (
+                  importantPoints.map(p => (
+                    <div key={p.id} className="bg-amber-50/30 border border-amber-100/50 p-6 rounded-[2rem] relative group hover:shadow-xl hover:shadow-amber-50/50 transition-all hover:-translate-y-1">
+                      <button onClick={() => deletePoint(p.id)} className="absolute top-4 right-4 text-amber-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <i className="fa-solid fa-circle-xmark"></i>
+                      </button>
+                      <p className="text-slate-800 font-bold leading-relaxed pr-6">{p.content}</p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <span className="text-[8px] font-black uppercase text-amber-300 tracking-widest">
+                          {new Date(p.createdAt).toLocaleDateString()}
+                        </span>
+                        <button onClick={() => { navigator.clipboard.writeText(p.content); }} className="text-[8px] font-black uppercase text-amber-400 hover:text-amber-600 tracking-widest flex items-center gap-1.5 transition-colors">
+                          <i className="fa-solid fa-copy"></i> Copy
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'team' && (
           <div className="space-y-10 animate-in fade-in">
-             {/* Category Management */}
              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
                <h2 className="text-xl font-black text-slate-800 mb-2 flex items-center gap-3">
                  <i className="fa-solid fa-tags text-indigo-600"></i> Category Management
@@ -322,20 +384,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                        <>
                          <span className="text-sm font-black">{c}</span>
                          <div className="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button 
-                             onClick={() => { setRenamingCategory(c); setRenameValue(c); }} 
-                             className="w-8 h-8 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center"
-                             title="Rename Category"
-                           >
-                             <i className="fa-solid fa-pen-to-square text-xs"></i>
-                           </button>
-                           <button 
-                             onClick={() => deleteCategory(c)} 
-                             className="w-8 h-8 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center"
-                             title="Delete Category"
-                           >
-                             <i className="fa-solid fa-trash-can text-xs"></i>
-                           </button>
+                           <button onClick={() => { setRenamingCategory(c); setRenameValue(c); }} className="w-8 h-8 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center"><i className="fa-solid fa-pen-to-square text-xs"></i></button>
+                           <button onClick={() => deleteCategory(c)} className="w-8 h-8 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center"><i className="fa-solid fa-trash-can text-xs"></i></button>
                          </div>
                        </>
                      )}
@@ -344,7 +394,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, initialData }) => {
                </div>
              </div>
 
-             {/* Team Directory */}
              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
                <h2 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-3">
                  <i className="fa-solid fa-user-group text-emerald-600"></i> Team Directory

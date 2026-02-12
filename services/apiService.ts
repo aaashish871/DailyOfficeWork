@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { User, Task, TaskStatus } from '../types';
+import { User, Task, TaskStatus, ImportantPoint } from '../types';
 
 const SUPABASE_URL = 'https://yvugbgjrakdcgirxpcvi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_f3m2s_7xpL28Tm8vQsjU1A_R7HVsVJP';
@@ -11,6 +11,7 @@ const mapDbTaskToTask = (t: any): Task => ({
   id: t.id,
   title: t.title,
   description: t.description,
+  notes: t.notes, // Correctly mapped from DB column
   status: t.status as TaskStatus,
   priority: t.priority,
   category: t.category,
@@ -19,7 +20,6 @@ const mapDbTaskToTask = (t: any): Task => ({
   logDate: t.log_date,
   dueDate: t.due_date,
   blocker: t.blocker,
-  // Fixed: Corrected property name from postponed_reason to postponedReason to match Task interface
   postponedReason: t.postponed_reason,
   duration: t.duration
 });
@@ -43,7 +43,7 @@ export const apiService = {
     }
   },
 
-  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[]; categories: string[] }> => {
+  login: async (email: string, password: string): Promise<{ user: User; tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[] }> => {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) throw authError;
     const user = authData.user;
@@ -83,24 +83,31 @@ export const apiService = {
     };
   },
 
-  fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[]; categories: string[] }> => {
+  fetchWorkspace: async (userId: string): Promise<{ tasks: Task[]; team: string[]; categories: string[]; points: ImportantPoint[] }> => {
     const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     const { data: teamData } = await supabase.from('team_members').select('name').eq('user_id', userId);
     const { data: catData } = await supabase.from('task_categories').select('name').eq('user_id', userId);
+    const { data: pointsData } = await supabase.from('important_points').select('*').eq('user_id', userId).order('created_at', { ascending: false });
 
     const defaultCategories = ['Meeting', 'Development', 'Bug Fix', 'Testing', 'Documentation', 'Planning', 'Admin'];
 
     return {
       tasks: (tasksData || []).map(mapDbTaskToTask),
       team: teamData && teamData.length > 0 ? teamData.map(t => t.name) : ['Self'],
-      categories: catData && catData.length > 0 ? catData.map(c => c.name) : defaultCategories
+      categories: catData && catData.length > 0 ? catData.map(c => c.name) : defaultCategories,
+      points: (pointsData || []).map(p => ({
+        id: p.id,
+        content: p.content,
+        createdAt: new Date(p.created_at).getTime()
+      }))
     };
   },
 
-  syncWorkspace: async (userId: string, tasks: Task[], team: string[], categories: string[]): Promise<void> => {
+  syncWorkspace: async (userId: string, tasks: Task[], team: string[], categories: string[], points: ImportantPoint[]): Promise<void> => {
     try {
       await apiService.syncTeam(userId, team);
       await apiService.syncCategories(userId, categories);
+      await apiService.syncPoints(userId, points);
       const results = await Promise.allSettled(tasks.map(task => apiService.syncTask(userId, task)));
       const failures = results.filter(r => r.status === 'rejected');
       if (failures.length > 0) throw new Error(`${failures.length} tasks failed to sync.`);
@@ -116,6 +123,7 @@ export const apiService = {
       user_id: userId,
       title: task.title,
       description: task.description,
+      notes: task.notes, // Included in payload
       status: task.status,
       priority: task.priority,
       category: task.category,
@@ -148,6 +156,19 @@ export const apiService = {
     if (categories.length > 0) {
       const inserts = categories.map(c => ({ user_id: userId, name: c }));
       await supabase.from('task_categories').insert(inserts);
+    }
+  },
+
+  syncPoints: async (userId: string, points: ImportantPoint[]): Promise<void> => {
+    await supabase.from('important_points').delete().eq('user_id', userId);
+    if (points.length > 0) {
+      const inserts = points.map(p => ({ 
+        id: p.id,
+        user_id: userId, 
+        content: p.content,
+        created_at: new Date(p.createdAt).toISOString()
+      }));
+      await supabase.from('important_points').insert(inserts);
     }
   },
 

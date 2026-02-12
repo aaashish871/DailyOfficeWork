@@ -102,10 +102,19 @@ const TaskList: React.FC<TaskListProps> = ({
                   </span>
                 </div>
                 
-                {/* Title - No Cross Line (Strikethrough) as requested */}
-                <h3 className={`text-lg font-black leading-tight transition-colors ${isDone ? 'text-slate-800' : 'text-slate-800'}`}>
+                <h3 className={`text-lg font-black leading-tight text-slate-800`}>
                   {task.title}
                 </h3>
+                
+                {/* Display Task Notes/Hints if available */}
+                {task.notes && (
+                  <div className="mt-3 p-3 bg-indigo-50/50 rounded-xl border border-indigo-50 flex items-start gap-3">
+                    <i className="fa-solid fa-lightbulb text-indigo-400 text-xs mt-1"></i>
+                    <p className="text-[11px] font-bold text-slate-600 leading-relaxed italic">
+                      {task.notes}
+                    </p>
+                  </div>
+                )}
                 
                 {!isSelf && (
                   <div className="mt-3 flex items-center gap-2">

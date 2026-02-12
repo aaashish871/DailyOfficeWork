@@ -13,6 +13,7 @@ interface TaskFormProps {
 const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMembers, categories, defaultStatus = TaskStatus.DONE }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [notes, setNotes] = useState(''); // New state for task notes
   const [priority, setPriority] = useState<TaskPriority>(TaskPriority.MEDIUM);
   const [category, setCategory] = useState(categories[0] || 'Meeting');
   const [blocker, setBlocker] = useState('Self');
@@ -43,6 +44,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
     onAdd({
       title,
       description,
+      notes: notes.trim() || undefined,
       status: defaultStatus,
       priority,
       category,
@@ -52,6 +54,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
 
     setTitle('');
     setDescription('');
+    setNotes('');
     setPriority(TaskPriority.MEDIUM);
     setDuration('');
     setBlocker(teamMembers.includes('Self') ? 'Self' : (teamMembers[0] || ''));
@@ -132,6 +135,21 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
           </select>
         </div>
 
+        {/* New Row for Notes and Category */}
+        <div className="md:col-span-2 space-y-2">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Strategy / Hints / Context</label>
+          <div className="relative">
+            <i className="fa-solid fa-note-sticky absolute left-4 top-4 text-slate-300"></i>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add specific hints or reminders for this task..."
+              rows={1}
+              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-slate-300 font-medium text-slate-600 min-h-[54px]"
+            />
+          </div>
+        </div>
+
         <div className="space-y-2">
           <div className="flex justify-between items-center ml-1">
             <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Select Category</label>
@@ -169,7 +187,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ onAdd, onManageCategories, teamMemb
           </select>
         </div>
 
-        <div className="md:col-span-1"></div>
+        <div className="md:col-span-2"></div>
 
         <div className="md:col-span-2 space-y-2 flex items-end">
           <button type="submit" className={`w-full ${isPlanner ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-slate-900 hover:bg-slate-800'} text-white font-black uppercase tracking-widest text-[11px] py-4 rounded-2xl flex items-center justify-center gap-3 shadow-xl transition-all active:scale-95`}>

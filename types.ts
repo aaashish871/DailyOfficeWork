@@ -24,6 +24,7 @@ export interface Task {
   id: string;
   title: string;
   description: string;
+  notes?: string; // New: Hints/Notes for specific tasks
   status: TaskStatus;
   priority: TaskPriority;
   category: string;
@@ -34,6 +35,12 @@ export interface Task {
   blocker?: string; 
   postponedReason?: string; 
   duration?: number;
+}
+
+export interface ImportantPoint {
+  id: string;
+  content: string;
+  createdAt: number;
 }
 
 export interface DailyLog {
